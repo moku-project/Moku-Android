@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="utf-8"?>
+<font-family xmlns:app="http://schemas.android.com/apk/res-auto">
+    <font app:font="@font/dm_sans_regular" app:fontWeight="400" app:fontStyle="normal" />
+    <font app:font="@font/dm_sans_medium" app:fontWeight="500" app:fontStyle="normal" />
+    <font app:font="@font/dm_sans_semibold" app:fontWeight="600" app:fontStyle="normal" />
+    <font app:font="@font/dm_sans_bold" app:fontWeight="700" app:fontStyle="normal" />
+</font-family>

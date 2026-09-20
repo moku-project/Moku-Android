@@ -1,0 +1,30 @@
+# Gradle
+android/.gradle/
+android/build/
+android/app/build/
+android/*/build/
+
+# Kotlin compiler daemon / incremental compilation cache
+android/.kotlin/
+
+# Local dev environment config (SDK path, per-machine)
+android/local.properties
+
+# Android Studio / IntelliJ
+android/.idea/
+*.iml
+android/**/.cxx/
+android/**/captures/
+*.hprof
+
+# Signing keys — never commit these
+*.jks
+*.keystore
+android/keystore.properties
+
+# macOS
+.DS_Store
+
+# Nix
+result
+result-*
