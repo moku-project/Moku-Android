@@ -14,10 +14,8 @@ import java.util.TimeZone
 
 data class ContinueReadingItem(val media: LibraryMediaEntity, val progress: Float, val unitLabel: String)
 
-/** One cell in the "last 7 days" strip — [hasActivity] drives which cells render highlighted. */
-data class ActivityDay(val label: String, val hasActivity: Boolean, val isToday: Boolean)
+const val HEATMAP_WEEKS = 26
 
-/** What [HomeScreen] renders — a stats dashboard over the on-device library DB, no mock content. */
 data class HomeState(
     val loading: Boolean = true,
     val error: String? = null,
@@ -26,19 +24,14 @@ data class HomeState(
     val totalChapters: Int = 0,
     val readTimeSeconds: Long = 0,
     val chaptersThisWeek: Int = 0,
-    val activity: List<ActivityDay> = emptyList(),
+    val seriesStarted: Int = 0,
+    // Week-major, Sunday first, ending with the current week; -1 marks days after today.
+    val heatmap: List<Int> = emptyList(),
     val upNext: ContinueReadingItem? = null,
 )
 
-/**
- * Loads the Home dashboard entirely from the on-device library DB ([LocalLibraryRepository]) —
- * streak/chapter/activity stats are real rollups over [ReadingProgressEntity] rows, not
- * placeholders. An empty library legitimately produces all-zero stats, same as the reference
- * design's "Nothing here yet" state — this loader doesn't fabricate activity to fill the UI.
- */
 object HomeDataLoader {
     private val DAY_FORMAT = SimpleDateFormat("yyyy-MM-dd", Locale.US).apply { timeZone = TimeZone.getDefault() }
-    private val WEEKDAY_FORMAT = SimpleDateFormat("EEEEE", Locale.US).apply { timeZone = TimeZone.getDefault() }
 
     suspend fun load(context: Context): HomeState = withContext(Dispatchers.IO) {
         try {
@@ -72,7 +65,8 @@ object HomeDataLoader {
                 totalChapters = completed.size,
                 readTimeSeconds = readTimeSeconds,
                 chaptersThisWeek = thisWeekCount,
-                activity = lastSevenDays(distinctDays),
+                seriesStarted = library.count { it.lastViewedAt != null },
+                heatmap = heatmap(allProgress.groupingBy { DAY_FORMAT.format(it.updatedAt) }.eachCount()),
                 upNext = upNext,
             )
         } catch (t: Throwable) {
@@ -91,8 +85,6 @@ object HomeDataLoader {
             unitLabel = if (latest != null) "${(latest.progress * 100).toInt()}% complete" else "Not started",
         )
     }
-
-    /** Consecutive days with activity, counting back from today; breaks the moment a day is missing. */
     private fun currentStreak(daysWithActivity: Set<String>): Int {
         val cal = Calendar.getInstance()
         var streak = 0
@@ -103,18 +95,18 @@ object HomeDataLoader {
         return streak
     }
 
-    private fun lastSevenDays(daysWithActivity: Set<String>): List<ActivityDay> {
+    private fun heatmap(countsByDay: Map<String, Int>): List<Int> {
+        val today = DAY_FORMAT.format(Calendar.getInstance().time)
         val cal = Calendar.getInstance()
-        cal.add(Calendar.DAY_OF_YEAR, -6)
-        return (0..6).map { offset ->
+        cal.add(Calendar.DAY_OF_YEAR, -(cal.get(Calendar.DAY_OF_WEEK) - Calendar.SUNDAY))
+        cal.add(Calendar.WEEK_OF_YEAR, -(HEATMAP_WEEKS - 1))
+        var future = false
+        return List(HEATMAP_WEEKS * 7) {
             val key = DAY_FORMAT.format(cal.time)
-            val day = ActivityDay(
-                label = WEEKDAY_FORMAT.format(cal.time),
-                hasActivity = daysWithActivity.contains(key),
-                isToday = offset == 6,
-            )
+            val count = if (future) -1 else countsByDay[key] ?: 0
+            if (key == today) future = true
             cal.add(Calendar.DAY_OF_YEAR, 1)
-            day
+            count
         }
     }
 }
