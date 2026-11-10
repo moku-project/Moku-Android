@@ -28,10 +28,22 @@ outside of Nix.
 ```sh
 nix develop
 
+scripts/fetch-tsunagu.sh   # the released Tsunagu core pinned in tsunagu.version
 cd android
 gradle assembleDebug
 gradle installDebug   # with a device/emulator connected via adb
 ```
+
+The app runs Tsunagu in-process: its Go core comes from a Tsunagu release as
+`android/app/libs/tsunagu.aar`. To work on Tsunagu itself, build the core from a
+local checkout (default `../Tsunagu`, or set `TSUNAGU_SRC`) instead:
+
+```sh
+scripts/build-tsunagu.sh
+```
+
+The x86_64 emulator needs a build with both ABIs (the default); `gradle
+assembleDebug -Pabis=arm64-v8a` limits the APK to phones.
 
 To boot a local emulator instead of using a physical device:
 
@@ -45,6 +57,7 @@ emulator -avd moku_test
 ```
 android/app/src/main/kotlin/dev/moku/mobile/
   backend/      Unified media-source interface + local/remote implementations
+  core/         Embedded Tsunagu: the Go core and the gRPC extension host it calls
   extension/    Keiyoushi-style extension loading/installation (DexClassLoader)
   library/      Room database — library, downloads, content filter rules
   novel/        WebView-hosted JS runtime for CommonJS novel plugins

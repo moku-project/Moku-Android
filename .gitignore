@@ -28,3 +28,6 @@ android/keystore.properties
 # Nix
 result
 result-*
+
+# Built by scripts/build-tsunagu.sh
+android/app/libs/

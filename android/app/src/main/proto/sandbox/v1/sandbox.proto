@@ -1,0 +1,285 @@
+syntax = "proto3";
+
+package sandbox.v1;
+
+option go_package = "tsunagu/backend/internal/sandbox/gen;sandboxv1";
+
+service ExtensionService {
+  rpc LoadExtensions(LoadExtensionsRequest) returns (ExtensionList);
+  rpc ListLoadedExtensions(Empty) returns (ExtensionList);
+  rpc UnloadExtension(ExtensionRequest) returns (Empty);
+  rpc Search(SearchRequest) returns (SearchResponse);
+  rpc GetDetails(EntryRequest) returns (EntryDetails);
+  rpc GetChapters(EntryRequest) returns (ChapterList);
+  rpc GetPages(ChapterRequest) returns (PageList);
+  rpc GetChapterText(ChapterRequest) returns (TextContent);
+  rpc GetEpisodes(EntryRequest) returns (EpisodeList);
+  rpc GetVideoStream(EpisodeRequest) returns (StreamInfo);
+  rpc GetImageBytes(ImageRequest) returns (ImageData);
+  rpc PeekExtension(PeekExtensionRequest) returns (ExtensionMetadata);
+  rpc GetFilterList(GetFilterListRequest) returns (GetFilterListResponse);
+  rpc GetPopularManga(BrowseRequest) returns (SearchResponse);
+  rpc GetLatestUpdates(BrowseRequest) returns (SearchResponse);
+  rpc GetSourcePreferences(GetSourcePreferencesRequest) returns (GetSourcePreferencesResponse);
+  rpc SetSourcePreference(SetSourcePreferenceRequest) returns (Empty);
+}
+
+enum ContentType {
+  CONTENT_TYPE_UNSPECIFIED = 0;
+  MANGA = 1;
+  NOVEL = 2;
+  ANIME = 3;
+}
+
+message Empty {}
+
+message LoadExtensionsRequest {
+  repeated ExtensionToLoad extensions = 1;
+}
+
+message ExtensionToLoad {
+  string extension_id = 1;
+  string jar_path = 2;
+  ContentType content_type = 3;
+  string lang = 4;
+}
+
+message ExtensionRequest {
+  string extension_id = 1;
+}
+
+message Extension {
+  string id = 1;
+  string name = 2;
+  string version = 3;
+  ContentType content_type = 4;
+  string lang = 5;
+  bool supports_latest = 6;
+  int64 source_id = 7;
+}
+
+message ExtensionList {
+  repeated Extension extensions = 1;
+}
+
+message SearchRequest {
+  string extension_id = 1;
+  string query = 2;
+  int32 page = 3;
+  repeated FilterNode filters = 4;
+}
+
+message BrowseRequest {
+  string extension_id = 1;
+  int32 page = 2;
+}
+
+message SearchResponse {
+  repeated EntrySummary results = 1;
+  bool has_next_page = 2;
+}
+
+message EntrySummary {
+  string source_entry_id = 1;
+  string title = 2;
+  string cover_url = 3;
+  repeated string genres = 4;
+}
+
+message EntryRequest {
+  string extension_id = 1;
+  string source_entry_id = 2;
+}
+
+message EntryDetails {
+  string source_entry_id = 1;
+  string title = 2;
+  string description = 3;
+  string cover_url = 4;
+  repeated string authors = 5;
+  repeated string genres = 6;
+  string status = 7;
+  repeated string artists = 8;
+}
+
+message ChapterList {
+  repeated ChapterSummary chapters = 1;
+}
+
+message ChapterSummary {
+  string source_chapter_id = 1;
+  string name = 2;
+  double number = 3;
+  int64 upload_timestamp = 4;
+}
+
+message ChapterRequest {
+  string extension_id = 1;
+  string source_entry_id = 2;
+  string source_chapter_id = 3;
+}
+
+message PageList {
+  repeated string page_urls = 1;
+}
+
+message TextContent {
+  string content = 1;
+  string format = 2;
+}
+
+message EpisodeList {
+  repeated EpisodeSummary episodes = 1;
+}
+
+message EpisodeSummary {
+  string source_episode_id = 1;
+  string name = 2;
+  double number = 3;
+  int64 upload_timestamp = 4;
+}
+
+message EpisodeRequest {
+  string extension_id = 1;
+  string source_entry_id = 2;
+  string source_episode_id = 3;
+}
+
+message StreamInfo {
+
+  string stream_url = 1;
+  string quality = 2;
+  repeated SubtitleTrack subtitles = 3;
+  map<string, string> headers = 4;
+
+  repeated VideoSource sources = 5;
+  repeated AudioTrack audio_tracks = 6;
+
+  repeated SkipTimestamp timestamps = 7;
+}
+
+message VideoSource {
+  string url = 1;
+  string label = 2;
+  int32 resolution = 3;
+  bool preferred = 4;
+  map<string, string> headers = 5;
+  repeated SubtitleTrack subtitles = 6;
+}
+
+message AudioTrack {
+  string url = 1;
+  string lang = 2;
+}
+
+message SkipTimestamp {
+  int64 start_ms = 1;
+  int64 end_ms = 2;
+  string name = 3;
+  string type = 4;
+}
+
+message SubtitleTrack {
+  string url = 1;
+  string lang = 2;
+}
+
+message ImageRequest {
+  string extension_id = 1;
+  string image_url = 2;
+}
+
+message ImageData {
+  bytes data = 1;
+  string content_type = 2;
+}
+
+message PeekExtensionRequest {
+  string file_path = 1;
+}
+
+message ExtensionMetadata {
+  string package_name = 1;
+  string name = 2;
+  ContentType content_type = 3;
+  string lang = 4;
+}
+
+message GetSourcePreferencesRequest {
+  string extension_id = 1;
+}
+
+message SourcePreference {
+  string key = 1;
+  string title = 2;
+  string summary = 3;
+  string type = 4;
+  repeated string entries = 5;
+  repeated string entry_values = 6;
+  string current_value = 7;
+  string default_value = 8;
+}
+
+message GetSourcePreferencesResponse {
+  repeated SourcePreference preferences = 1;
+}
+
+message SetSourcePreferenceRequest {
+  string extension_id = 1;
+  string key = 2;
+  string value = 3;
+}
+
+message GetFilterListRequest {
+  string extension_id = 1;
+}
+
+message GetFilterListResponse {
+  repeated FilterNode filters = 1;
+}
+
+message FilterNode {
+  string name = 1;
+  oneof kind {
+    HeaderFilter header = 2;
+    SeparatorFilter separator = 3;
+    SelectFilter select = 4;
+    TextFilter text = 5;
+    CheckBoxFilter checkbox = 6;
+    TriStateFilter tristate = 7;
+    GroupFilter group = 8;
+    SortFilter sort = 9;
+  }
+}
+
+message HeaderFilter {}
+
+message SeparatorFilter {}
+
+message SelectFilter {
+  repeated string values = 1;
+  int32 state = 2;
+}
+
+message TextFilter {
+  string state = 1;
+}
+
+message CheckBoxFilter {
+  bool state = 1;
+}
+
+message TriStateFilter {
+  int32 state = 1;
+}
+
+message GroupFilter {
+  repeated FilterNode children = 1;
+}
+
+message SortFilter {
+  repeated string values = 1;
+  bool has_state = 2;
+  int32 index = 3;
+  bool ascending = 4;
+}

@@ -1,6 +1,7 @@
 package dev.moku.mobile
 
 import android.os.Bundle
+import android.util.Log
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
@@ -17,6 +18,8 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
+import androidx.lifecycle.lifecycleScope
+import dev.moku.mobile.core.TsunaguCore
 import dev.moku.mobile.ui.components.ContentTypeFilterController
 import dev.moku.mobile.ui.components.MokuBottomNav
 import dev.moku.mobile.ui.components.MokuDestination
@@ -31,6 +34,8 @@ import dev.moku.mobile.ui.settings.SettingsScreen
 import dev.moku.mobile.ui.theme.MokuAppTheme
 import dev.moku.mobile.ui.theme.MokuTheme
 import dev.moku.mobile.ui.theme.ThemeController
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.launch
 
 class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -38,6 +43,10 @@ class MainActivity : ComponentActivity() {
         enableEdgeToEdge()
         ThemeController.init(this)
         ContentTypeFilterController.init(this)
+        lifecycleScope.launch(Dispatchers.IO) {
+            runCatching { TsunaguCore.start(this@MainActivity) }
+                .onFailure { Log.e("MainActivity", "starting Tsunagu core failed", it) }
+        }
 
         setContent {
             MokuAppTheme(themeId = ThemeController.current) {
@@ -52,11 +61,7 @@ class MainActivity : ComponentActivity() {
 @Composable
 private fun MokuApp() {
     var destination by remember { mutableStateOf(MokuDestination.Home) }
-    // Extensions management lives under Settings (drill-down), not its own bottom-nav tab —
-    // it's a management surface, not something reached daily like Search/Library/Downloads.
     var extensionsOpen by remember { mutableStateOf(false) }
-    // Detail/Reader are full-screen overlays outside the tab system entirely (no bottom nav,
-    // reachable from any tab that lists media) rather than another MokuDestination case.
     var detailTarget by remember { mutableStateOf<Pair<String, String>?>(null) }
     var readerTarget by remember { mutableStateOf<Triple<String, String, String>?>(null) }
     val onOpenMedia: (String, String) -> Unit = { originId, mediaId -> detailTarget = originId to mediaId }
@@ -72,9 +77,7 @@ private fun MokuApp() {
                 )
             },
         ) { padding ->
-            // Only the bottom inset (nav bar, from the bottom bar's own measurement) is applied
-            // here — the top/status-bar inset is left to each screen so Home's hero art can bleed
-            // full-bleed under the status bar instead of every screen getting a blanket top pad.
+            // Each screen applies the status-bar inset itself so Home can draw under it.
             Box(modifier = Modifier.fillMaxSize().padding(bottom = padding.calculateBottomPadding())) {
                 when (destination) {
                     MokuDestination.Home -> HomeScreen(

@@ -44,7 +44,7 @@
               "x86_64"
             ];
             includeSources = false;
-            includeNDK = false;
+            includeNDK = true;
             useGoogleAPIs = true;
             useGoogleTVAddOns = false;
           };
@@ -59,17 +59,16 @@
               jdk17
               kotlin
               gradle
+              go
             ];
 
-            # AGP wants JDK 17; Kotlin extension host code (DexClassLoader /
-            # PathClassLoader loading of Keiyoushi extension APKs) is plain
-            # Android SDK, no NDK/cgo involved — see Tsunagu's sandbox for
-            # why that path was dropped in favor of a fully native host.
+            # The NDK and Go build the embedded Tsunagu core (scripts/build-tsunagu.sh).
             shellHook = ''
               export JAVA_HOME=${pkgs.jdk17}/lib/openjdk
               export PATH=$JAVA_HOME/bin:$PATH
               export ANDROID_HOME=${androidSdk}/libexec/android-sdk
               export ANDROID_SDK_ROOT=$ANDROID_HOME
+              export ANDROID_NDK_HOME=$(echo $ANDROID_HOME/ndk/*)
               export GRADLE_OPTS="-Dorg.gradle.project.android.aapt2FromMavenOverride=$ANDROID_HOME/build-tools/36.0.0/aapt2"
 
               echo "Moku Mobile dev shell — JDK 17, Android SDK 34"

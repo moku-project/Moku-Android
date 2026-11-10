@@ -3,6 +3,7 @@ plugins {
     id("org.jetbrains.kotlin.android")
     id("org.jetbrains.kotlin.plugin.compose")
     id("org.jetbrains.kotlin.plugin.serialization")
+    id("com.google.protobuf")
 }
 
 android {
@@ -20,6 +21,11 @@ android {
         targetSdk = 36
         versionCode = 1
         versionName = "0.1.0"
+
+        // Must match the ABIs scripts/build-tsunagu.sh built, or Android picks one with no Go core.
+        ndk {
+            abiFilters += (project.findProperty("abis") as String? ?: "arm64-v8a,x86_64").split(",")
+        }
     }
 
     buildTypes {
@@ -39,13 +45,27 @@ android {
         }
     }
 
+    packaging {
+        // okhttp and okhttp-brotli both ship this; nothing reads it on Android.
+        resources.excludes += "META-INF/versions/9/OSGI-INF/MANIFEST.MF"
+    }
+
     buildFeatures {
         compose = true
         buildConfig = true
     }
 }
 
+val grpcVersion = "1.84.2"
+val protobufVersion = "4.36.2"
+
 dependencies {
+    implementation(files("libs/tsunagu.aar"))
+    implementation("io.grpc:grpc-okhttp:$grpcVersion")
+    implementation("io.grpc:grpc-protobuf-lite:$grpcVersion")
+    implementation("io.grpc:grpc-stub:$grpcVersion")
+    implementation("com.google.protobuf:protobuf-javalite:$protobufVersion")
+
     implementation("androidx.core:core-ktx:1.13.1")
     implementation("androidx.activity:activity-compose:1.9.3")
     implementation("androidx.lifecycle:lifecycle-runtime-ktx:2.8.7")
@@ -104,4 +124,25 @@ dependencies {
     // supported version is 2.3.0" (same class of host/extension version-pin bug as the okhttp
     // compileSdk issue, just Room-vs-Kotlin instead of extension-vs-host). No KSP release
     // matches 2.4.10 either. A handful of tables with plain SQL doesn't need an ORM anyway.
+}
+
+protobuf {
+    protoc {
+        artifact = "com.google.protobuf:protoc:$protobufVersion"
+    }
+    plugins {
+        create("grpc") {
+            artifact = "io.grpc:protoc-gen-grpc-java:$grpcVersion"
+        }
+    }
+    generateProtoTasks {
+        all().forEach { task ->
+            task.builtins {
+                create("java") { option("lite") }
+            }
+            task.plugins {
+                create("grpc") { option("lite") }
+            }
+        }
+    }
 }
