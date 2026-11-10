@@ -41,6 +41,7 @@ android {
 
     buildFeatures {
         compose = true
+        buildConfig = true
     }
 }
 
@@ -60,11 +61,17 @@ dependencies {
     implementation("uy.kohesive.injekt:injekt-core:1.16.1")
     implementation("io.reactivex:rxjava:1.3.8")
     implementation("com.squareup.okhttp3:okhttp:5.4.0")
+    implementation("com.squareup.okhttp3:okhttp-brotli:5.4.0")
+    implementation("com.squareup.okhttp3:okhttp-zstd:5.4.0")
+    implementation("com.squareup.okhttp3:okhttp-dnsoverhttps:5.4.0")
+    implementation("com.squareup.okhttp3:logging-interceptor:5.4.0")
     implementation("org.jetbrains.kotlinx:kotlinx-serialization-json:1.11.0")
     implementation("org.jetbrains.kotlinx:kotlinx-serialization-json-okio:1.11.0")
+    implementation("org.jetbrains.kotlinx:kotlinx-serialization-protobuf:1.11.0")
     implementation("org.jetbrains.kotlinx:kotlinx-coroutines-android:1.9.0")
     implementation("androidx.preference:preference-ktx:1.2.1")
     implementation("org.jsoup:jsoup:1.23.2")
+    implementation("app.cash.quickjs:quickjs-android:0.9.2")
 
     // Encrypted local storage for the self-hosted Tsunagu server URL + bearer token.
     implementation("androidx.security:security-crypto:1.1.0")

@@ -1,6 +1,6 @@
-package eu.kanade.tachiyomi.animesource.model
+// Adapted from Aniyomi (https://github.com/aniyomiorg/aniyomi), licensed under Apache License 2.0.
 
-import eu.kanade.tachiyomi.source.model.UpdateStrategy
+package eu.kanade.tachiyomi.animesource.model
 
 class SAnimeImpl : SAnime {
     override lateinit var url: String
@@ -11,7 +11,10 @@ class SAnimeImpl : SAnime {
     override var genre: String? = null
     override var status: Int = 0
     override var thumbnail_url: String? = null
-    override var update_strategy: UpdateStrategy = UpdateStrategy.ALWAYS_UPDATE
+    override var background_url: String? = null
+    override var update_strategy: AnimeUpdateStrategy = AnimeUpdateStrategy.ALWAYS_UPDATE
+    override var fetch_type: FetchType = FetchType.Episodes
+    override var season_number: Double = -1.0
     override var initialized: Boolean = false
     override var memo: kotlinx.serialization.json.JsonObject? = kotlinx.serialization.json.JsonObject(emptyMap())
 }

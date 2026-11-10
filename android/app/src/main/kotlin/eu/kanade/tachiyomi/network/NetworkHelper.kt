@@ -1,6 +1,9 @@
 package eu.kanade.tachiyomi.network
 
 import android.content.Context
+import eu.kanade.tachiyomi.network.interceptor.CloudflareInterceptor
+import eu.kanade.tachiyomi.network.interceptor.UncaughtExceptionInterceptor
+import eu.kanade.tachiyomi.network.interceptor.UserAgentInterceptor
 import okhttp3.Cache
 import okhttp3.Cookie
 import okhttp3.CookieJar
@@ -25,7 +28,13 @@ class NetworkHelper(context: Context) {
         .readTimeout(30, TimeUnit.SECONDS)
         .callTimeout(2, TimeUnit.MINUTES)
         .cache(Cache(File(context.cacheDir, "network_cache"), 5L * 1024 * 1024))
+        .addInterceptor(UncaughtExceptionInterceptor())
+        .addInterceptor(UserAgentInterceptor(::defaultUserAgentProvider))
+        .addInterceptor(CloudflareInterceptor())
         .build()
+
+    // Extensions still reference this; the default client already has the Cloudflare interceptor.
+    val cloudflareClient: OkHttpClient get() = client
 
     fun defaultUserAgentProvider(): String =
         "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) " +

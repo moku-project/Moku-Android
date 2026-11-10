@@ -159,6 +159,9 @@ abstract class HttpSource : CatalogueSource {
         return GET(page.imageUrl!!, headers)
     }
 
+    // The URL the source would fetch the image from; host-side, not part of the extension API.
+    fun resolveImageUrl(page: Page): String = imageRequest(page).url.toString()
+
     @Suppress("Unused")
     fun SChapter.setUrlWithoutDomain(url: String) {
         this.url = getUrlWithoutDomain(url)

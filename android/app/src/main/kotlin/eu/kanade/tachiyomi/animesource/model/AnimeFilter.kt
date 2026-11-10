@@ -1,11 +1,19 @@
+// Adapted from Aniyomi (https://github.com/aniyomiorg/aniyomi), licensed under Apache License 2.0.
+
 package eu.kanade.tachiyomi.animesource.model
 
 sealed class AnimeFilter<T>(val name: String, var state: T) {
     open class Header(name: String) : AnimeFilter<Any>(name, 0)
     open class Separator(name: String = "") : AnimeFilter<Any>(name, 0)
-    abstract class Select<V>(name: String, val values: Array<V>, state: Int = 0) : AnimeFilter<Int>(name, state)
+    abstract class Select<V>(name: String, val values: Array<V>, state: Int = 0) : AnimeFilter<Int>(
+        name,
+        state,
+    )
     abstract class Text(name: String, state: String = "") : AnimeFilter<String>(name, state)
-    abstract class CheckBox(name: String, state: Boolean = false) : AnimeFilter<Boolean>(name, state)
+    abstract class CheckBox(name: String, state: Boolean = false) : AnimeFilter<Boolean>(
+        name,
+        state,
+    )
     abstract class TriState(name: String, state: Int = STATE_IGNORE) : AnimeFilter<Int>(name, state) {
         fun isIgnored() = state == STATE_IGNORE
         fun isIncluded() = state == STATE_INCLUDE
@@ -21,13 +29,11 @@ sealed class AnimeFilter<T>(val name: String, var state: T) {
         AnimeFilter<Sort.Selection?>(name, state) {
         data class Selection(val index: Int, val ascending: Boolean)
     }
-
     override fun equals(other: Any?): Boolean {
         if (this === other) return true
         if (other !is AnimeFilter<*>) return false
         return name == other.name && state == other.state
     }
-
     override fun hashCode(): Int {
         var result = name.hashCode()
         result = 31 * result + (state?.hashCode() ?: 0)

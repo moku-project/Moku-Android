@@ -1,9 +1,11 @@
+// Adapted from Aniyomi (https://github.com/aniyomiorg/aniyomi), licensed under Apache License 2.0.
+
 package eu.kanade.tachiyomi.animesource
 
 import eu.kanade.tachiyomi.animesource.model.AnimeFilterList
 import eu.kanade.tachiyomi.animesource.model.AnimesPage
-import rx.Observable
 import tachiyomi.core.common.util.lang.awaitSingle
+import rx.Observable
 
 @Suppress("unused")
 interface AnimeCatalogueSource : AnimeSource {
@@ -36,3 +38,5 @@ interface AnimeCatalogueSource : AnimeSource {
 
     override fun getFilterList(): AnimeFilterList
 }
+
+private fun <T> Observable<T>.awaitSingle(): T = throw Exception("Stub!")

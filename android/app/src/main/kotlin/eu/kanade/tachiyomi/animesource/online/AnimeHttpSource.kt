@@ -1,3 +1,5 @@
+// Adapted from Aniyomi (https://github.com/aniyomiorg/aniyomi), licensed under Apache License 2.0.
+
 @file:Suppress("DEPRECATION")
 
 package eu.kanade.tachiyomi.animesource.online
@@ -5,11 +7,13 @@ package eu.kanade.tachiyomi.animesource.online
 import eu.kanade.tachiyomi.animesource.AnimeCatalogueSource
 import eu.kanade.tachiyomi.animesource.model.AnimeFilterList
 import eu.kanade.tachiyomi.animesource.model.AnimesPage
+import eu.kanade.tachiyomi.animesource.model.Hoster
 import eu.kanade.tachiyomi.animesource.model.SAnime
 import eu.kanade.tachiyomi.animesource.model.SEpisode
 import eu.kanade.tachiyomi.animesource.model.Video
 import eu.kanade.tachiyomi.network.NetworkHelper
 import eu.kanade.tachiyomi.network.asObservableSuccess
+import eu.kanade.tachiyomi.network.awaitSuccess
 import okhttp3.Headers
 import okhttp3.HttpUrl.Companion.toHttpUrl
 import okhttp3.OkHttpClient
@@ -18,14 +22,9 @@ import okhttp3.Response
 import rx.Observable
 import tachiyomi.core.common.util.lang.awaitSingle
 import uy.kohesive.injekt.injectLazy
+import eu.kanade.tachiyomi.util.sourceUrlWithoutDomain
 import java.security.MessageDigest
 
-/**
- * Adapted from Tsunagu's sandbox port of Aniyomi's AnimeHttpSource: swapped Koin
- * (`GlobalContext.get().get()`) for Injekt (`by injectLazy()`) to match the manga
- * HttpSource's DI pattern already proven on-device, and reused our real
- * awaitSingle() bridge directly rather than an import that could get shadowed.
- */
 @Suppress("unused", "unused_parameter")
 abstract class AnimeHttpSource : AnimeCatalogueSource {
 
@@ -35,11 +34,7 @@ abstract class AnimeHttpSource : AnimeCatalogueSource {
 
     open val versionId: Int = 1
 
-    override val id: Long by lazy {
-        val key = "${name.lowercase()}/$lang/$versionId"
-        val bytes = MessageDigest.getInstance("MD5").digest(key.toByteArray())
-        (0..7).map { bytes[it].toLong() and 0xff shl 8 * (7 - it) }.reduce(Long::or) and Long.MAX_VALUE
-    }
+    override val id: Long by lazy { generateId(name, lang, versionId) }
 
     val headers: Headers by lazy { headersBuilder().build() }
 
@@ -59,6 +54,7 @@ abstract class AnimeHttpSource : AnimeCatalogueSource {
     }
 
     protected open fun popularAnimeRequest(page: Int): Request = throw UnsupportedOperationException()
+
     protected open fun popularAnimeParse(response: Response): AnimesPage = throw UnsupportedOperationException()
 
     @Deprecated("Use the suspend API instead", ReplaceWith("getSearchAnime"))
@@ -69,6 +65,7 @@ abstract class AnimeHttpSource : AnimeCatalogueSource {
     }
 
     protected open fun searchAnimeRequest(page: Int, query: String, filters: AnimeFilterList): Request = throw UnsupportedOperationException()
+
     protected open fun searchAnimeParse(response: Response): AnimesPage = throw UnsupportedOperationException()
 
     @Deprecated("Use the suspend API instead", ReplaceWith("getLatestUpdates"))
@@ -79,6 +76,7 @@ abstract class AnimeHttpSource : AnimeCatalogueSource {
     }
 
     protected open fun latestUpdatesRequest(page: Int): Request = throw UnsupportedOperationException()
+
     protected open fun latestUpdatesParse(response: Response): AnimesPage = throw UnsupportedOperationException()
 
     @Deprecated("Use the suspend API instead", ReplaceWith("getAnimeDetails"))
@@ -89,9 +87,11 @@ abstract class AnimeHttpSource : AnimeCatalogueSource {
     }
 
     open fun animeDetailsRequest(anime: SAnime): Request = GET(baseUrl + anime.url, headers)
+
     protected open fun animeDetailsParse(response: Response): SAnime = throw UnsupportedOperationException()
 
-    override suspend fun getAnimeDetails(anime: SAnime): SAnime = fetchAnimeDetails(anime).awaitSingle()
+    override suspend fun getAnimeDetails(anime: SAnime): SAnime =
+        fetchAnimeDetails(anime).awaitSingle()
 
     @Deprecated("Use the suspend API instead", ReplaceWith("getEpisodeList"))
     override fun fetchEpisodeList(anime: SAnime): Observable<List<SEpisode>> {
@@ -101,9 +101,11 @@ abstract class AnimeHttpSource : AnimeCatalogueSource {
     }
 
     protected open fun episodeListRequest(anime: SAnime): Request = GET(baseUrl + anime.url, headers)
+
     protected open fun episodeListParse(response: Response): List<SEpisode> = throw UnsupportedOperationException()
 
-    override suspend fun getEpisodeList(anime: SAnime): List<SEpisode> = fetchEpisodeList(anime).awaitSingle()
+    override suspend fun getEpisodeList(anime: SAnime): List<SEpisode> =
+        fetchEpisodeList(anime).awaitSingle()
 
     @Deprecated("Use the suspend API instead", ReplaceWith("getVideoList"))
     override fun fetchVideoList(episode: SEpisode): Observable<List<Video>> {
@@ -113,37 +115,81 @@ abstract class AnimeHttpSource : AnimeCatalogueSource {
     }
 
     protected open fun videoListRequest(episode: SEpisode): Request = GET(baseUrl + episode.url, headers)
+
     protected open fun videoListParse(response: Response): List<Video> = throw UnsupportedOperationException()
 
-    override suspend fun getVideoList(episode: SEpisode): List<Video> = fetchVideoList(episode).awaitSingle()
+    override suspend fun getVideoList(episode: SEpisode): List<Video> =
+        fetchVideoList(episode).awaitSingle()
+
+    override suspend fun getSeasonList(anime: SAnime): List<SAnime> =
+        seasonListParse(client.newCall(seasonListRequest(anime)).awaitSuccess())
+
+    protected open fun seasonListRequest(anime: SAnime): Request = GET(baseUrl + anime.url, headers)
+
+    protected open fun seasonListParse(response: Response): List<SAnime> = throw UnsupportedOperationException()
+
+    override suspend fun getHosterList(episode: SEpisode): List<Hoster> =
+        hosterListParse(client.newCall(hosterListRequest(episode)).awaitSuccess())
+
+    protected open fun hosterListRequest(episode: SEpisode): Request = GET(baseUrl + episode.url, headers)
+
+    protected open fun hosterListParse(response: Response): List<Hoster> = throw UnsupportedOperationException()
+
+    override suspend fun getVideoList(hoster: Hoster): List<Video> =
+        videoListParse(client.newCall(videoListRequest(hoster)).awaitSuccess(), hoster)
+
+    protected open fun videoListRequest(hoster: Hoster): Request = GET(hoster.hosterUrl, headers)
+
+    protected open fun videoListParse(response: Response, hoster: Hoster): List<Video> =
+        throw UnsupportedOperationException()
+
+    /** Resolves a lazily-loaded video; null when it can't be played. */
+    open suspend fun resolveVideo(video: Video): Video? = video
+
+    open fun List<Hoster>.sortHosters(): List<Hoster> = this
 
     open fun List<Video>.sortVideos(): List<Video> = this
 
-    fun SEpisode.setUrlWithoutDomain(url: String) { this.url = getUrlWithoutDomain(url) }
-    fun SAnime.setUrlWithoutDomain(url: String) { this.url = getUrlWithoutDomain(url) }
+    @Deprecated("Use resolveVideo instead")
+    open suspend fun getVideoUrl(video: Video): String =
+        videoUrlParse(client.newCall(videoUrlRequest(video)).awaitSuccess())
 
-    private fun getUrlWithoutDomain(orig: String): String {
+    @Deprecated("Use resolveVideo instead")
+    protected open fun videoUrlRequest(video: Video): Request = GET(video.url, headers)
+
+    @Deprecated("Use resolveVideo instead")
+    protected open fun videoUrlParse(response: Response): String = throw UnsupportedOperationException()
+
+    protected fun generateId(name: String, lang: String, versionId: Int): Long {
+        val key = "${name.lowercase()}/$lang/$versionId"
+        val bytes = MessageDigest.getInstance("MD5").digest(key.toByteArray())
+        return (0..7).map { bytes[it].toLong() and 0xff shl 8 * (7 - it) }.reduce(Long::or) and Long.MAX_VALUE
+    }
+
+    fun SEpisode.setUrlWithoutDomain(url: String) {
+        this.url = getUrlWithoutDomain(url)
+    }
+
+    fun SAnime.setUrlWithoutDomain(url: String) {
+        this.url = getUrlWithoutDomain(url)
+    }
+
+    private fun getUrlWithoutDomain(orig: String): String = sourceUrlWithoutDomain(orig)
+
+    open fun getAnimeUrl(anime: SAnime): String {
         return try {
-            val url = if (orig.startsWith("http")) orig.toHttpUrl() else "$baseUrl$orig".toHttpUrl()
-            var out = url.encodedPath
-            if (url.encodedQuery != null) out += "?${url.encodedQuery}"
-            if (url.encodedFragment != null) out += "#${url.encodedFragment}"
-            out
+            animeDetailsRequest(anime).url.toString()
         } catch (_: Exception) {
-            orig
+            baseUrl + anime.url
         }
     }
 
-    open fun getAnimeUrl(anime: SAnime): String = try {
-        animeDetailsRequest(anime).url.toString()
-    } catch (_: Exception) {
-        baseUrl + anime.url
-    }
-
-    open fun getEpisodeUrl(episode: SEpisode): String = try {
-        videoListRequest(episode).url.toString()
-    } catch (_: Exception) {
-        baseUrl + episode.url
+    open fun getEpisodeUrl(episode: SEpisode): String {
+        return try {
+            videoListRequest(episode).url.toString()
+        } catch (_: Exception) {
+            baseUrl + episode.url
+        }
     }
 
     open fun prepareNewEpisode(episode: SEpisode, anime: SAnime) {}

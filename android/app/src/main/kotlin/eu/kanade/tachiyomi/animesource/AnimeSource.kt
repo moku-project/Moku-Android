@@ -1,12 +1,10 @@
-// Vendored from Tsunagu's own JVM sandbox (sandbox/src/main/kotlin/eu/kanade/tachiyomi/animesource/),
-// which already ported Aniyomi's animesource runtime for its (JVM, not Android) extension
-// host. Reused verbatim where possible: Aniyomi extensions are real Android APK/dex, so
-// the same DexClassLoader mechanism proven for manga (see ExtensionLoader) applies directly —
-// this vendoring is "redo the manga spike with a second runtime," not a new problem.
+// Adapted from Aniyomi (https://github.com/aniyomiorg/aniyomi), licensed under Apache License 2.0.
+
 package eu.kanade.tachiyomi.animesource
 
 import eu.kanade.tachiyomi.animesource.model.AnimeFilterList
 import eu.kanade.tachiyomi.animesource.model.AnimesPage
+import eu.kanade.tachiyomi.animesource.model.Hoster
 import eu.kanade.tachiyomi.animesource.model.SAnime
 import eu.kanade.tachiyomi.animesource.model.SEpisode
 import eu.kanade.tachiyomi.animesource.model.Video
@@ -38,6 +36,15 @@ interface AnimeSource {
     suspend fun getEpisodeList(anime: SAnime): List<SEpisode>
 
     suspend fun getVideoList(episode: SEpisode): List<Video>
+
+    /** @since extensions-lib 16 */
+    suspend fun getSeasonList(anime: SAnime): List<SAnime> = throw UnsupportedOperationException()
+
+    /** @since extensions-lib 16. The first hoster should be the preferred one. */
+    suspend fun getHosterList(episode: SEpisode): List<Hoster> = throw IllegalStateException("Not used")
+
+    /** @since extensions-lib 16 */
+    suspend fun getVideoList(hoster: Hoster): List<Video> = throw IllegalStateException("Not used")
 
     fun getFilterList(): AnimeFilterList = AnimeFilterList()
 
