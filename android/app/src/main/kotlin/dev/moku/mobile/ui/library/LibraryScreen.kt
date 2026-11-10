@@ -37,7 +37,6 @@ import dev.moku.mobile.backend.MediaContentType
 import dev.moku.mobile.library.LibraryMediaEntity
 import dev.moku.mobile.library.LocalLibraryRepository
 import dev.moku.mobile.ui.components.ContentTypeFilterController
-import dev.moku.mobile.ui.components.ContentTypeSwitch
 import dev.moku.mobile.ui.components.MokuTopBar
 import dev.moku.mobile.ui.theme.MokuRadius
 import dev.moku.mobile.ui.theme.MokuSpacing
@@ -69,7 +68,7 @@ fun LibraryScreen(onOpenMedia: (String, String) -> Unit = { _, _ -> }) {
     }
 
     Column(modifier = Modifier.fillMaxSize().statusBarsPadding()) {
-        MokuTopBar(title = "Library", trailing = { ContentTypeSwitch() })
+        MokuTopBar(title = "Library")
 
         when {
             loading -> Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {

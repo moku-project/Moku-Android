@@ -5,10 +5,10 @@ import androidx.compose.ui.text.font.Font
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.TextStyle
+import androidx.compose.ui.unit.em
 import androidx.compose.ui.unit.sp
 import dev.moku.mobile.R
 
-/** Moku desktop's `--font-sans: "DM Sans"` — the actual bundled brand typeface, not a fallback. */
 val MokuSansFamily = FontFamily(
     Font(R.font.dm_sans_regular, FontWeight.Normal),
     Font(R.font.dm_sans_medium, FontWeight.Medium),
@@ -16,7 +16,6 @@ val MokuSansFamily = FontFamily(
     Font(R.font.dm_sans_bold, FontWeight.Bold),
 )
 
-/** Moku desktop's `--font-ui: "DM Mono"` — used for tabular/numeric UI chrome (chapter counts, timestamps). */
 val MokuMonoFamily = FontFamily(
     Font(R.font.dm_mono_regular, FontWeight.Normal),
     Font(R.font.dm_mono_medium, FontWeight.Medium),
@@ -35,3 +34,14 @@ val MokuTypography = Typography(
     labelMedium = TextStyle(fontFamily = MokuMonoFamily, fontWeight = FontWeight.Medium, fontSize = 12.sp, lineHeight = 16.sp),
     labelSmall = TextStyle(fontFamily = MokuMonoFamily, fontWeight = FontWeight.Medium, fontSize = 11.sp, lineHeight = 14.sp),
 )
+
+object MokuText {
+    val title = TextStyle(fontFamily = MokuSansFamily, fontWeight = FontWeight.SemiBold, fontSize = 20.sp, lineHeight = 24.sp, letterSpacing = (-0.02).em)
+    val heading = TextStyle(fontFamily = MokuSansFamily, fontWeight = FontWeight.SemiBold, fontSize = 17.sp, lineHeight = 22.sp, letterSpacing = (-0.01).em)
+    val body = TextStyle(fontFamily = MokuSansFamily, fontWeight = FontWeight.Medium, fontSize = 14.sp, lineHeight = 19.sp)
+    val label = TextStyle(fontFamily = MokuMonoFamily, fontWeight = FontWeight.Normal, fontSize = 10.sp, lineHeight = 12.sp, letterSpacing = 0.06.em)
+    val meta = TextStyle(fontFamily = MokuMonoFamily, fontWeight = FontWeight.Normal, fontSize = 11.sp, lineHeight = 15.sp, letterSpacing = 0.01.em)
+    val sub = TextStyle(fontFamily = MokuMonoFamily, fontWeight = FontWeight.Normal, fontSize = 12.sp, lineHeight = 16.sp, letterSpacing = 0.01.em)
+    val value = TextStyle(fontFamily = MokuMonoFamily, fontWeight = FontWeight.Medium, fontSize = 14.sp, lineHeight = 16.sp)
+    val bigValue = TextStyle(fontFamily = MokuMonoFamily, fontWeight = FontWeight.Medium, fontSize = 22.sp, lineHeight = 24.sp)
+}

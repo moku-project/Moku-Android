@@ -46,7 +46,6 @@ import dev.moku.mobile.repository.InstalledExtensionEntity
 import dev.moku.mobile.repository.LocalRepositoryManager
 import dev.moku.mobile.repository.RepositoryEntity
 import dev.moku.mobile.ui.components.ContentTypeFilterController
-import dev.moku.mobile.ui.components.ContentTypeSwitch
 import dev.moku.mobile.ui.components.MokuTopBar
 import dev.moku.mobile.ui.theme.MokuRadius
 import dev.moku.mobile.ui.theme.MokuSpacing
@@ -59,11 +58,6 @@ private fun MediaContentType.label() = when (this) {
     MediaContentType.NOVEL -> "Novel"
 }
 
-/**
- * Extension + repository management — real data from [LocalRepositoryManager], the same store
- * the desktop-parity extension pipeline (installer/loader) already writes to. Two sections:
- * what's installed on-device right now, and the repositories you can browse/install more from.
- */
 @Composable
 fun ExtensionsScreen(onBack: () -> Unit = {}) {
     val context = LocalContext.current
@@ -85,8 +79,7 @@ fun ExtensionsScreen(onBack: () -> Unit = {}) {
 
     LaunchedEffect(Unit) {
         loading = true
-        // First run: seed the two real community repos so there's something to browse without
-        // hand-typing a URL.
+        // Seed the community repos on first run.
         if (manager.getRepositories().isEmpty()) {
             manager.addRepository("https://raw.githubusercontent.com/keiyoushi/extensions/repo/", "Keiyoushi", MediaContentType.MANGA)
             manager.addRepository("https://raw.githubusercontent.com/aniyomiorg/aniyomi-extensions/repo/", "Aniyomi", MediaContentType.ANIME)
@@ -97,7 +90,7 @@ fun ExtensionsScreen(onBack: () -> Unit = {}) {
 
     Column(modifier = Modifier.fillMaxSize().statusBarsPadding()) {
         LazyColumn(contentPadding = PaddingValues(bottom = MokuSpacing.Sp8)) {
-            item { MokuTopBar(title = "Extensions", onBack = onBack, trailing = { ContentTypeSwitch() }) }
+            item { MokuTopBar(title = "Extensions", onBack = onBack) }
 
             if (loading) {
                 item {

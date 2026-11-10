@@ -10,7 +10,6 @@ enum class MokuThemeId(val label: String) {
     WARM("Warm"),
 }
 
-/** One full palette — ported field-for-field from a `[data-theme="…"]` block in Moku desktop's `themes.css`. */
 data class MokuPalette(
     val isLight: Boolean,
     val bgVoid: Color,

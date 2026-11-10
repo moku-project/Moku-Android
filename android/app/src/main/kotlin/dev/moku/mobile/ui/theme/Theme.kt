@@ -14,7 +14,6 @@ import androidx.compose.runtime.setValue
 private const val PREFS_NAME = "moku_theme_prefs"
 private const val KEY_THEME = "theme_id"
 
-/** Persists + broadcasts the active [MokuThemeId] app-wide — the Settings tab's theming center writes to this. */
 object ThemeController {
     var current by mutableStateOf(MokuThemeId.ORIGINAL)
         private set
@@ -35,7 +34,6 @@ object ThemeController {
 
 val LocalMokuPalette = compositionLocalOf { MokuPalettes.Original }
 
-/** Mirrors `MaterialTheme.colorScheme` ergonomics: `MokuTheme.colors.accent` from anywhere inside [MokuAppTheme]. */
 object MokuTheme {
     val colors: MokuPalette
         @Composable get() = LocalMokuPalette.current
@@ -67,7 +65,6 @@ private fun colorSchemeFor(palette: MokuPalette) = if (palette.isLight) {
     )
 }
 
-/** All 5 of Moku desktop's themes, ported — [ThemeController.current] picks which one renders. */
 @Composable
 fun MokuAppTheme(themeId: MokuThemeId = ThemeController.current, content: @Composable () -> Unit) {
     val palette = MokuPalettes.of(themeId)

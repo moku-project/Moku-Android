@@ -35,7 +35,6 @@ import dev.moku.mobile.library.ContentFilterDao
 import dev.moku.mobile.library.LocalLibraryDatabase
 import dev.moku.mobile.ui.components.ContentTypeFilter
 import dev.moku.mobile.ui.components.ContentTypeFilterController
-import dev.moku.mobile.ui.components.ContentTypeSwitch
 import dev.moku.mobile.ui.components.MediaPosterCard
 import dev.moku.mobile.ui.components.MokuTopBar
 import dev.moku.mobile.ui.theme.MokuRadius
@@ -94,7 +93,7 @@ fun SearchScreen(onOpenMedia: (String, String) -> Unit = { _, _ -> }) {
     }
 
     Column(modifier = Modifier.fillMaxSize().statusBarsPadding()) {
-        MokuTopBar(title = "Discover", trailing = { ContentTypeSwitch() })
+        MokuTopBar(title = "Discover")
 
         OutlinedTextField(
             value = query,

@@ -1,5 +1,6 @@
 package dev.moku.mobile.ui.components
 
+import androidx.annotation.DrawableRes
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
@@ -10,6 +11,7 @@ import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.layout.defaultMinSize
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
@@ -18,12 +20,6 @@ import androidx.compose.foundation.border
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Check
-import androidx.compose.material.icons.filled.Download
-import androidx.compose.material.icons.filled.Home
-import androidx.compose.material.icons.filled.Search
-import androidx.compose.material.icons.filled.Settings
-import androidx.compose.material.icons.automirrored.filled.ArrowBack
-import androidx.compose.material.icons.automirrored.filled.LibraryBooks
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
@@ -33,11 +29,14 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import coil.compose.AsyncImage
+import dev.moku.mobile.R
 import dev.moku.mobile.ui.theme.MokuRadius
 import dev.moku.mobile.ui.theme.MokuSpacing
+import dev.moku.mobile.ui.theme.MokuText
 import dev.moku.mobile.ui.theme.MokuTheme
 
 enum class MokuDestination(val label: String) {
@@ -48,8 +47,6 @@ enum class MokuDestination(val label: String) {
     Settings("Settings"),
 }
 
-/** The rounded-square icon badge header actions sit in — everything in the UI reads as a
- * rounded square, never a circle or a pill. */
 @Composable
 fun MokuIconBadge(
     modifier: Modifier = Modifier,
@@ -57,59 +54,90 @@ fun MokuIconBadge(
     onClick: (() -> Unit)? = null,
     content: @Composable () -> Unit,
 ) {
+    val shape = RoundedCornerShape(MokuRadius.Lg)
     val base = Modifier
-        .size(40.dp)
-        .clip(RoundedCornerShape(MokuRadius.Lg))
+        .size(36.dp)
+        .clip(shape)
         .background(background)
+        .border(1.dp, MokuTheme.colors.borderDim, shape)
         .let { if (onClick != null) it.clickable(onClick = onClick) else it }
     Box(modifier = base.then(modifier), contentAlignment = Alignment.Center) { content() }
 }
 
-/** Flat, icon-only bottom nav — five destinations, rounded-square selection background behind
- * the active icon (never a circle or pill). */
+@Composable
+fun MokuHeaderAction(@DrawableRes icon: Int, label: String, onClick: () -> Unit) {
+    MokuIconBadge(onClick = onClick) {
+        Icon(painterResource(icon), contentDescription = label, tint = MokuTheme.colors.textMuted, modifier = Modifier.size(18.dp))
+    }
+}
+
+@Composable
+fun MokuSectionLabel(text: String, modifier: Modifier = Modifier, @DrawableRes icon: Int? = null) {
+    val colors = MokuTheme.colors
+    Row(modifier = modifier, verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(MokuSpacing.Sp2)) {
+        if (icon != null) Icon(painterResource(icon), contentDescription = null, tint = colors.textFaint, modifier = Modifier.size(11.dp))
+        Text(text.uppercase(), style = MokuText.label, color = colors.textFaint)
+    }
+}
+
 @Composable
 fun MokuBottomNav(current: MokuDestination, onSelect: (MokuDestination) -> Unit) {
     val colors = MokuTheme.colors
     val items = listOf(
-        Triple(MokuDestination.Home, Icons.Filled.Home, "Home"),
-        Triple(MokuDestination.Search, Icons.Filled.Search, "Discover"),
-        Triple(MokuDestination.Library, Icons.AutoMirrored.Filled.LibraryBooks, "Library"),
-        Triple(MokuDestination.Downloads, Icons.Filled.Download, "Downloads"),
-        Triple(MokuDestination.Settings, Icons.Filled.Settings, "Settings"),
+        Triple(MokuDestination.Home, R.drawable.ph_house_light, "Home"),
+        Triple(MokuDestination.Search, R.drawable.ph_magnifying_glass_light, "Discover"),
+        Triple(MokuDestination.Library, R.drawable.ph_books_light, "Library"),
+        Triple(MokuDestination.Downloads, R.drawable.ph_download_simple_light, "Downloads"),
+        Triple(MokuDestination.Settings, R.drawable.ph_gear_six_light, "Settings"),
     )
+    val shape = RoundedCornerShape(MokuRadius.Xxl)
+    val button = 44.dp
     Row(
         modifier = Modifier
             .fillMaxWidth()
-            .background(colors.bgSurface)
             .navigationBarsPadding()
-            .padding(horizontal = MokuSpacing.Sp3, vertical = MokuSpacing.Sp2),
-        horizontalArrangement = Arrangement.SpaceEvenly,
+            .padding(start = MokuSpacing.Sp4, end = MokuSpacing.Sp4, top = MokuSpacing.Sp2, bottom = MokuSpacing.Sp3),
+        horizontalArrangement = Arrangement.spacedBy(MokuSpacing.Sp2),
+        verticalAlignment = Alignment.CenterVertically,
     ) {
-        items.forEach { (dest, icon, label) -> NavIcon(icon, label, selected = current == dest) { onSelect(dest) } }
+        Row(
+            modifier = Modifier
+                .weight(1f)
+                .clip(shape)
+                .background(colors.bgRaised)
+                .border(1.dp, colors.borderDim, shape)
+                .padding(6.dp),
+            horizontalArrangement = Arrangement.SpaceBetween,
+        ) {
+            items.forEach { (dest, icon, label) ->
+                NavIcon(icon, label, selected = current == dest, size = button) { onSelect(dest) }
+            }
+        }
+        ContentModeButton(size = button + 12.dp, iconSize = 22.dp)
     }
 }
 
 @Composable
-private fun NavIcon(icon: androidx.compose.ui.graphics.vector.ImageVector, label: String, selected: Boolean, onClick: () -> Unit) {
+private fun NavIcon(
+    @DrawableRes icon: Int,
+    label: String,
+    selected: Boolean,
+    size: androidx.compose.ui.unit.Dp,
+    onClick: () -> Unit,
+) {
     val colors = MokuTheme.colors
     Box(
         modifier = Modifier
-            .size(48.dp)
-            .clip(RoundedCornerShape(MokuRadius.Lg))
+            .size(size)
+            .clip(RoundedCornerShape(MokuRadius.Xl))
             .background(if (selected) colors.accentDim else Color.Transparent)
             .clickable(onClick = onClick),
         contentAlignment = Alignment.Center,
     ) {
-        Icon(icon, contentDescription = label, tint = if (selected) colors.accentBright else colors.textMuted, modifier = Modifier.size(22.dp))
+        Icon(painterResource(icon), contentDescription = label, tint = if (selected) colors.accentBright else colors.textMuted, modifier = Modifier.size(24.dp))
     }
 }
 
-/**
- * The screen-title row used atop every tab and drill-down screen — an optional rounded-square
- * back button, the title, and an optional trailing slot (e.g. an action [MokuIconBadge]). One
- * shared component instead of every screen hand-rolling its own title `Text` + `Row`, so title
- * size/weight/spacing stays consistent app-wide.
- */
 @Composable
 fun MokuTopBar(
     title: String,
@@ -119,26 +147,27 @@ fun MokuTopBar(
 ) {
     val colors = MokuTheme.colors
     Row(
-        modifier = modifier.fillMaxWidth().padding(horizontal = MokuSpacing.Sp4, vertical = MokuSpacing.Sp3),
+        modifier = modifier
+            .fillMaxWidth()
+            .height(56.dp)
+            .padding(horizontal = MokuSpacing.Sp4),
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.SpaceBetween,
     ) {
-        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(MokuSpacing.Sp2)) {
-            if (onBack != null) {
-                Box(
-                    modifier = Modifier.defaultMinSize(minWidth = 44.dp, minHeight = 44.dp).clip(RoundedCornerShape(MokuRadius.Lg)).clickable(onClick = onBack),
-                    contentAlignment = Alignment.Center,
-                ) {
-                    Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back", tint = colors.textSecondary)
-                }
-            }
-            Text(title, style = MaterialTheme.typography.headlineLarge, color = colors.textPrimary, maxLines = 1, overflow = TextOverflow.Ellipsis)
+        Row(
+            modifier = Modifier.weight(1f, fill = false),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(MokuSpacing.Sp3),
+        ) {
+            if (onBack != null) MokuHeaderAction(R.drawable.ph_arrow_left_light, "Back", onBack)
+            Text(title, style = MokuText.title, color = colors.textPrimary, maxLines = 1, overflow = TextOverflow.Ellipsis)
         }
-        if (trailing != null) trailing()
+        if (trailing != null) {
+            Row(horizontalArrangement = Arrangement.spacedBy(MokuSpacing.Sp2), verticalAlignment = Alignment.CenterVertically) { trailing() }
+        }
     }
 }
 
-/** A poster-style card for a manga/anime/novel title — cover, title, one status/genre chip line. */
 @Composable
 fun MediaPosterCard(
     title: String,
@@ -192,7 +221,6 @@ fun MediaPosterCard(
     }
 }
 
-/** A tap-to-select swatch used in the Settings theming center. */
 @Composable
 fun ThemeSwatch(
     name: String,
@@ -241,7 +269,6 @@ fun ThemeSwatch(
     }
 }
 
-/** A labeled row for Settings — title, optional subtitle/value, optional trailing content. */
 @Composable
 fun SettingsRow(
     title: String,
