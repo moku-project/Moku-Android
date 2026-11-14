@@ -1,16 +1,6 @@
 package dev.moku.mobile.extension.repo
 
-/**
- * Parses a Keiyoushi-format `index.pb` repo index. Field layout mirrors Tsunagu's
- * `backend/internal/repository/protobuf.go` exactly (see [ProtoReader] for why there's
- * no generated-from-.proto parser here):
- *
- * repoIndex message: 1=name 2=badgeLabel 3=signingKey 4=contact 101=extensionList 102=extensionListUrl
- * extension message (repeated inside extensionList field 1): 1=name 2=packageName 3=resources
- *   4=extensionLib 5=versionCode(varint) 6=versionName 7=contentWarning(varint) 8=repeated source
- * resources message: 1=apkUrl 2=iconUrl 501=jarUrl
- * source message: 1=id(varint) 2=name 3=language 4=homeUrl 5=repeated mirrorUrl 7=message
- */
+/** Parses a repo's index.pb; field numbers match Tsunagu's repository/protobuf.go. */
 data class RepoExtension(
     val name: String,
     val packageName: String,

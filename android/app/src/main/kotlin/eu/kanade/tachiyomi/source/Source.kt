@@ -1,5 +1,5 @@
 // Vendored from Mihon (github.com/mihonapp/mihon) source-api, package-compatible with
-// Keiyoushi/Tachiyomi extensions compiled against extensions-lib. This is the *real*
+// Mihon/Tachiyomi-format extensions compiled against extensions-lib. This is the *real*
 // runtime implementation the extension's classloader resolves against — extensions
 // compile against extensions-lib's identically-named stub interfaces at build time only.
 package eu.kanade.tachiyomi.source

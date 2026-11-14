@@ -6,17 +6,25 @@ import dev.moku.mobile.extension.ExtensionLoader
 import dev.moku.mobile.extension.RuntimeBootstrap
 import dev.moku.mobile.novel.NovelPluginCache
 import dev.moku.mobile.novel.NovelPluginLoader
+import dev.moku.mobile.remote.RemoteTsunaguBackend
+import dev.moku.mobile.remote.ServerSession
+import dev.moku.mobile.sync.ServerOrigin
+import dev.moku.mobile.sync.ServerSources
 
-/**
- * Rebuilds a local [ContentBackend] from nothing but its [ContentBackend.originId] — needed
- * anywhere that outlives the in-memory instance that first loaded it, chiefly
- * [dev.moku.mobile.library.DownloadWorker] resuming a download after the app process was
- * killed. `originId` already encodes everything needed: `local:<manga|anime|novel>:<packageName>`.
- */
+/** Rebuilds a backend from its originId, `local:<type>:<packageName>`, e.g. for a download resumed after a restart. */
 object LocalBackendFactory {
-    class UnresolvableOriginException(originId: String) : Exception("Cannot reconstruct local backend for originId=$originId")
+    class UnresolvableOriginException(originId: String, message: String = "Cannot reconstruct local backend for originId=$originId") : Exception(message)
 
     suspend fun reconstruct(context: Context, originId: String): ContentBackend {
+        ServerOrigin.parse(originId)?.let { ref ->
+            ServerSession.init(context)
+            val server = ServerSession.current
+            if (server?.instanceId != ref.instanceId) {
+                val name = ServerSession.nameOf(ref.instanceId) ?: "a server"
+                throw UnresolvableOriginException(originId, "This title is from $name, which this phone isn't signed in to")
+            }
+            return RemoteTsunaguBackend(ServerSession.client, ref.instanceId, ref.extensionId, ServerSources.name(context, ref.extensionId) ?: server.name ?: "Server", ref.type)
+        }
         val parts = originId.split(":", limit = 3)
         require(parts.size == 3 && parts[0] == "local") { "Not a local originId: $originId" }
         val (_, kind, packageName) = parts
@@ -27,12 +35,12 @@ object LocalBackendFactory {
             "manga" -> {
                 if (!installer.isInstalled(packageName)) throw UnresolvableOriginException(originId)
                 val loaded = ExtensionLoader.loadManga(context, installer.installedFile(packageName))
-                LocalMangaBackend(loaded.sources.first(), loaded.packageName)
+                LocalMangaBackend(loaded.source, loaded.packageName)
             }
             "anime" -> {
                 if (!installer.isInstalled(packageName)) throw UnresolvableOriginException(originId)
                 val loaded = ExtensionLoader.loadAnime(context, installer.installedFile(packageName))
-                LocalAnimeBackend(loaded.sources.first(), loaded.packageName)
+                LocalAnimeBackend(loaded.source, loaded.packageName)
             }
             "novel" -> {
                 val jsCode = NovelPluginCache.load(context, packageName) ?: throw UnresolvableOriginException(originId)

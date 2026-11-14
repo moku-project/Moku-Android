@@ -6,19 +6,9 @@ import eu.kanade.tachiyomi.animesource.model.AnimeFilterList
 import eu.kanade.tachiyomi.animesource.model.SAnime
 import eu.kanade.tachiyomi.animesource.model.SEpisode
 import eu.kanade.tachiyomi.animesource.model.Video
+import eu.kanade.tachiyomi.animesource.online.AnimeHttpSource
 
-/**
- * [ContentBackend] wrapping one real Aniyomi `AnimeSource` loaded on-device via
- * [dev.moku.mobile.extension.ExtensionLoader.loadAnime] — the anime counterpart of
- * [LocalMangaBackend]. Same DexClassLoader mechanism, same Injekt-provided NetworkHelper,
- * a second vendored runtime (`eu.kanade.tachiyomi.animesource`) instead of `source`.
- *
- * "Chapters" (this app's [BackendUnit]) are Aniyomi's episodes; "pages" become a single
- * [BackendUnitContent.Video] resolved from the source's own `getVideoList()` — Aniyomi
- * sources routinely return several quality variants per episode, so [unitContent] picks
- * the source's own `preferred` pick (falling back to the first) rather than exposing a
- * quality-selection UI concept the shared [ContentBackend] interface doesn't model yet.
- */
+/** An anime extension running on the phone. An episode plays the source's preferred video, else its first. */
 class LocalAnimeBackend(
     private val source: AnimeSource,
     packageName: String,
@@ -61,22 +51,32 @@ class LocalAnimeBackend(
         return source.getEpisodeList(anime).map { it.cacheAndConvert(mediaId) }
     }
 
+    @Suppress("DEPRECATION")
     override suspend fun unitContent(mediaId: String, unitId: String): BackendUnitContent {
         val episode = episodeCache[unitId] ?: SEpisode.create().apply { url = unitId }
-        val videos = source.getVideoList(episode)
+        val http = source as? AnimeHttpSource
+        val videos = source.getVideoList(episode).mapNotNull { v ->
+            runCatching {
+                if (v.videoUrl.isBlank() && http != null) v.videoUrl = http.getVideoUrl(v)
+                v.takeIf { it.videoUrl.isNotBlank() }
+            }.getOrNull()
+        }
         val video = videos.firstOrNull { it.preferred } ?: videos.firstOrNull()
             ?: return BackendUnitContent.Video(streamUrl = "")
+        fun Video.headerMap() = (headers ?: http?.headers)?.toMap().orEmpty()
         return BackendUnitContent.Video(
             streamUrl = video.videoUrl,
-            headers = video.headers?.toMap().orEmpty(),
+            headers = video.headerMap(),
             subtitleUrl = video.subtitleTracks.firstOrNull()?.url,
-            qualities = videos.map { VideoVariant(label = it.videoTitle, url = it.videoUrl, headers = it.headers?.toMap().orEmpty()) },
+            qualities = videos.map { VideoVariant(label = it.videoTitle, url = it.videoUrl, headers = it.headerMap()) },
+            subtitles = video.subtitleTracks.map { SubtitleTrack(label = it.lang, url = it.url) },
         )
     }
 
     private fun okhttp3.Headers.toMap(): Map<String, String> = names().associateWith { get(it).orEmpty() }
 
     private fun SAnime.cacheAndConvert(): BackendMedia {
+        (source as? AnimeHttpSource)?.let { CoverHeaders.remember(thumbnail_url, it.headers.names().associateWith { n -> it.headers[n].orEmpty() }) }
         animeCache[url] = this
         return BackendMedia(
             id = url,
@@ -86,9 +86,9 @@ class LocalAnimeBackend(
             thumbnailUrl = thumbnail_url,
             description = description,
             status = status.toStatusString(),
-            authors = author?.split(",")?.map { it.trim() }.orEmpty(),
-            artists = artist?.split(",")?.map { it.trim() }.orEmpty(),
-            genres = genre?.split(",")?.map { it.trim() }.orEmpty(),
+            authors = author?.split(",")?.map { it.trim() }?.filter { it.isNotEmpty() }.orEmpty(),
+            artists = artist?.split(",")?.map { it.trim() }?.filter { it.isNotEmpty() }.orEmpty(),
+            genres = genre?.split(",")?.map { it.trim() }?.filter { it.isNotEmpty() }.orEmpty(),
             inLibrary = false,
         )
     }

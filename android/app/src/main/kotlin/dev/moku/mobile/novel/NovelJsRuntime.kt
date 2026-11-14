@@ -25,12 +25,8 @@ import kotlin.coroutines.resume
 class NovelJsException(message: String) : Exception(message)
 
 /**
- * Hosts one novel plugin's JS execution inside a (headless, never attached to any view)
- * WebView — see [NovelBootstrapJs] for why WebView specifically. All WebView APIs are
- * main-thread-only, so every call here hops to [Dispatchers.Main]; the plugin's own
- * exported methods return Promises (real async/await compiles down to that), so
- * invocation is bridged through [AndroidBridge.onCallResult]/[onCallError] rather than
- * evaluateJavascript's synchronous-only return value.
+ * Runs a novel plugin in a headless WebView. WebView is main-thread only, and plugin methods return Promises, so
+ * results come back through [AndroidBridge] callbacks.
  */
 class NovelJsRuntime private constructor(private val context: Context) {
     private val network: NetworkHelper by injectLazy()
@@ -86,9 +82,7 @@ class NovelJsRuntime private constructor(private val context: Context) {
 
         val rawResult = evalRaw(wrapped)
         if (rawResult == "null") throw NovelJsException("plugin did not export a default plugin object")
-        // evaluateJavascript's callback value is itself a JSON encoding of the JS return
-        // value; since our script returns a string (JSON.stringify(...)), the callback
-        // delivers that string JSON-quoted a second time — unwrap one level before parsing.
+        // The script returns JSON.stringify(...), which evaluateJavascript quotes again; unwrap one level.
         val metaJson = org.json.JSONTokener(rawResult).nextValue() as String
         val meta = JSONObject(metaJson)
         return NovelPluginHandle(
@@ -143,9 +137,7 @@ class NovelJsRuntime private constructor(private val context: Context) {
                     }
                     val bodyStr = if (init.has("body")) init.getString("body") else null
                     var attempt = performFetch(url, method, headers, bodyStr)
-                    // A 403 is the standard Cloudflare-blocked signature — try solving it once
-                    // via a real WebView challenge run, then retry with the resulting
-                    // cookie/UA, instead of surfacing the error straight to the plugin.
+                    // A 403 is usually Cloudflare: solve it once in a WebView, then retry with its cookie.
                     if (attempt.status == 403) {
                         val session = runCatching { CloudflareBypassWebView.solve(context, url) }.getOrNull()
                         if (session != null) {

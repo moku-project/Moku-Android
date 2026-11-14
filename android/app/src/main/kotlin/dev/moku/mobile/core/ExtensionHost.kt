@@ -4,6 +4,7 @@ import android.content.Context
 import android.util.Log
 import dev.moku.mobile.extension.ExtensionLoadException
 import dev.moku.mobile.extension.ExtensionLoader
+import dev.moku.mobile.extension.preferredSource
 import dev.moku.mobile.novel.LoadedNovelExtension
 import dev.moku.mobile.novel.NovelItem
 import dev.moku.mobile.novel.NovelPluginLoader
@@ -350,18 +351,14 @@ class ExtensionHost(private val context: Context) : ExtensionServiceGrpc.Extensi
 
         val hosted = try {
             val ext = ExtensionLoader.loadManga(context, copy)
-            Hosted(ext.packageName, ext.versionName, ext.sources.pick(lang) { it.lang })
+            Hosted(ext.packageName, ext.versionName, ext.sources.preferredSource(lang) { it.lang })
         } catch (e: ExtensionLoadException) {
             val ext = runCatching { ExtensionLoader.loadAnime(context, copy) }.getOrElse { throw e }
-            Hosted(ext.packageName, ext.versionName, ext.sources.pick(lang) { (it as? AnimeCatalogueSource)?.lang ?: "" })
+            Hosted(ext.packageName, ext.versionName, ext.sources.preferredSource(lang) { (it as? AnimeCatalogueSource)?.lang.orEmpty() })
         }
         loaded[extensionId] = hosted
         return hosted
     }
-
-    // Multi-language extensions ship one source per language.
-    private fun <T> List<T>.pick(lang: String, langOf: (T) -> String): T =
-        firstOrNull { lang.isNotEmpty() && langOf(it) == lang } ?: firstOrNull { langOf(it) == "en" } ?: first()
 
     private fun sourceOf(extensionId: String): Any =
         loaded[extensionId]?.source

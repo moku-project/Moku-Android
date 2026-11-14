@@ -17,12 +17,7 @@ data class SourceNovel(
     val chapters: List<NovelChapterItem>,
 )
 
-/**
- * Loads one novel plugin (a raw JS file, not an APK — Keiyoushi/LNReader plugins are plain
- * CommonJS modules) into a [NovelJsRuntime] and exposes its four methods with Kotlin types,
- * mirroring Tsunagu's own `NovelPlugin.kt` shape so this vendoring stays recognizable
- * against the JVM version, just over a WebView bridge instead of GraalVM.
- */
+/** Loads a novel plugin (a CommonJS file) into a [NovelJsRuntime] and exposes its methods with Kotlin types. */
 object NovelPluginLoader {
 
     suspend fun load(context: Context, packageName: String, jsCode: String): LoadedNovelExtension {
@@ -83,9 +78,7 @@ class LoadedNovelExtension(private val handle: NovelPluginHandle) {
 
     suspend fun parseChapter(chapterPath: String): String {
         val json = handle.runtime.call("parseChapter", listOf(chapterPath))
-        // parseChapter resolves to a plain string (chapter HTML/text), which JSON.stringify
-        // wraps in quotes — unwrap via JSONObject's tokenizer isn't needed, org.json can
-        // parse a bare JSON string value directly via JSONTokener.
+        // The chapter comes back as a JSON-encoded string.
         return org.json.JSONTokener(json).nextValue() as? String ?: json
     }
 

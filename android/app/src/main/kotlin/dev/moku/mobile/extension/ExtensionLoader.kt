@@ -5,12 +5,14 @@ import android.content.pm.PackageInfo
 import android.content.pm.PackageManager
 import android.os.Build
 import dalvik.system.DexClassLoader
+import eu.kanade.tachiyomi.animesource.AnimeCatalogueSource
 import eu.kanade.tachiyomi.animesource.AnimeSource
 import eu.kanade.tachiyomi.animesource.AnimeSourceFactory
 import eu.kanade.tachiyomi.source.Source
 import eu.kanade.tachiyomi.source.SourceFactory
 import java.io.File
 import java.security.MessageDigest
+import java.util.Locale
 
 private const val MANGA_EXTENSION_FEATURE = "tachiyomi.extension"
 private const val METADATA_MANGA_SOURCE_CLASS = "tachiyomi.extension.class"
@@ -24,25 +26,35 @@ data class LoadedMangaExtension(
     val versionName: String,
     val signingFingerprint: String,
     val sources: List<Source>,
-)
+) {
+    /** The source the app uses from this extension; see [preferredSource]. */
+    val source: Source get() = sources.preferredSource { it.lang }
+}
 
 data class LoadedAnimeExtension(
     val packageName: String,
     val versionName: String,
     val signingFingerprint: String,
     val sources: List<AnimeSource>,
-)
+) {
+    val source: AnimeSource get() = sources.preferredSource { (it as? AnimeCatalogueSource)?.lang.orEmpty() }
+}
 
 /**
- * Loads a Keiyoushi manga extension APK sitting in app-private storage — never installed
- * via PackageManager. Used by [dev.moku.mobile.backend.LocalMangaBackend] and by extension
- * install/management flows.
- *
- * Anime (Aniyomi `AnimeSource`/`AnimeSourceFactory`) extensions use the identical
- * mechanism against a second vendored runtime that doesn't exist yet in this project —
- * see the kdoc on [dev.moku.mobile.backend.ContentBackend] for why that's a "redo this,"
- * not "solve a new problem," follow-up.
+ * Picks one source of a multi-language extension: [wanted], then the phone's language, English, "all", the first.
+ * Every caller must pick the same way, since a saved title only records its extension.
  */
+internal fun <T> List<T>.preferredSource(wanted: String = "", langOf: (T) -> String): T {
+    val device = Locale.getDefault().language
+    fun matches(lang: String, want: String) = want.isNotEmpty() && (lang.equals(want, true) || lang.startsWith("$want-", true))
+    return firstOrNull { matches(langOf(it), wanted) }
+        ?: firstOrNull { matches(langOf(it), device) }
+        ?: firstOrNull { langOf(it) == "en" }
+        ?: firstOrNull { langOf(it) == "all" || langOf(it) == "multi" }
+        ?: first()
+}
+
+/** Loads extension APKs from app-private storage with a DexClassLoader; they're never installed through Android. */
 object ExtensionLoader {
 
     fun loadManga(context: Context, apkFile: File): LoadedMangaExtension {

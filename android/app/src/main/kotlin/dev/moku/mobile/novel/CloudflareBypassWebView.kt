@@ -15,21 +15,8 @@ import java.util.concurrent.ConcurrentHashMap
 data class CloudflareSession(val cookie: String, val userAgent: String)
 
 /**
- * Local (no-server) equivalent of Tsunagu's FlareSolverr integration
- * (`cloudflare_solver_mode`/`CloudflareSolver` in the schema) — FlareSolverr itself is a
- * separate headless-Chrome *service* Tsunagu shells out to; a phone already has a real
- * Chromium engine on-device (the same WebView [NovelJsRuntime] already uses for plugin JS),
- * so instead of running a whole extra browser process, this loads the challenged page in a
- * real (headless, unattached) WebView, lets Cloudflare's own JS challenge run exactly as it
- * would in a normal mobile browser, and harvests the resulting `cf_clearance` cookie +
- * User-Agent once the challenge clears — then [dev.moku.mobile.novel.NovelJsRuntime]'s
- * `nativeFetch` (and any other OkHttp call hitting that domain) attaches them to plain HTTP
- * requests instead of needing a browser for every subsequent request.
- *
- * One real limitation this doesn't solve: some Cloudflare challenge tiers require an
- * interactive checkbox/turnstile tap, which a headless (never-attached) WebView can't satisfy
- * — this only clears the non-interactive JS-computation challenge tier, same ceiling
- * FlareSolverr itself has without a "solve manually" fallback.
+ * Clears a Cloudflare challenge by loading the page in a headless WebView and keeping its cf_clearance cookie and
+ * User-Agent. Challenges that need a tap can't be solved this way.
  */
 class CloudflareBypassWebView private constructor(private val context: Context) {
     companion object {
@@ -71,8 +58,7 @@ class CloudflareBypassWebView private constructor(private val context: Context) 
         try {
             withTimeout(timeoutMs) { cleared.await() }
         } catch (e: TimeoutCancellationException) {
-            // Fall through with whatever cookies exist — some sites set a clearance cookie
-            // under a different name, or the challenge tier needs interaction we can't do headlessly.
+            // Go on with whatever cookies exist; some sites name the clearance cookie differently.
         }
 
         return withContext(Dispatchers.Main.immediate) {

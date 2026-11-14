@@ -1,21 +1,8 @@
 package dev.moku.mobile.novel
 
 /**
- * The JS environment a Keiyoushi/LNReader-style novel plugin expects, reduced to what's
- * feasible as pure JS + one native bridge call — see NovelJsRuntime for why this is a
- * WebView (real Chromium JS engine) rather than a GraalVM-style approach: WebView already
- * provides DOMParser/Promise/TextEncoder/localStorage natively, so cheerio and dayjs can be
- * plain JS shims instead of a hand-marshalled host binding for every DOM operation (which is
- * what Tsunagu's GraalVM-based NovelJsBridge.kt has to do, JVM-side, since it has no browser
- * engine at all). Only network I/O crosses into Kotlin: a real fetch() would be blocked by
- * CORS from reading cross-origin response bodies in a browser context, so fetch is proxied
- * through the `AndroidBridge.nativeFetch` JavascriptInterface instead.
- *
- * Modules implemented: cheerio (a jQuery-lite subset over DOMParser), htmlparser2 (a SAX-style
- * Parser also built over DOMParser — buffered rather than truly streaming, since we have no
- * incremental parser, but callback-compatible), dayjs (format/add/subtract subset), @libs/fetch,
- * @libs/novelStatus, @libs/defaultCover, @libs/isAbsoluteUrl, @libs/utils, @libs/storage,
- * @libs/filterInputs.
+ * The JS environment novel plugins expect: cheerio, htmlparser2 and dayjs shims over the WebView's DOM, and @libs
+ * helpers. fetch goes through the native bridge, since CORS would block it in the page.
  */
 object NovelBootstrapJs {
 
@@ -170,9 +157,7 @@ object NovelBootstrapJs {
             FilterTypes: { TextInput: 'Text', Picker: 'Picker', CheckboxGroup: 'Checkbox', ExcludableCheckboxGroup: 'XCheckbox', Switch: 'Switch' },
         };
 
-        // htmlparser2's SAX-style Parser, over DOMParser (the same real-DOM trick as
-        // cheerio above) — buffer everything until end() since we have no true streaming
-        // parser, then walk the resulting tree emitting the same callbacks htmlparser2 does.
+        // htmlparser2's callbacks over DOMParser: buffered until end(), then the tree is walked.
         __modules['htmlparser2'] = (function() {
             var VOID_ELEMENTS = { area:1, base:1, br:1, col:1, embed:1, hr:1, img:1, input:1, link:1, meta:1, param:1, source:1, track:1, wbr:1 };
             function walk(node, onopentag, ontext, onclosetag) {
@@ -214,11 +199,7 @@ object NovelBootstrapJs {
         function __callPlugin(callId, methodName, argsJson) {
             try {
                 var args = JSON.parse(argsJson);
-                // popularNovels/searchNovels take an options object with a `filters` field
-                // shaped like the plugin's own declared filter schema (each entry carrying
-                // a `value`) — an empty {} makes plugins that destructure e.g. filters.genres.value
-                // throw. Fill in the plugin's own defaults (window.__plugin.filters) rather
-                // than requiring the host to already know this plugin's specific filter shape.
+                // Plugins destructure filters like filters.genres.value, so pass their own defaults, not {}.
                 if (methodName === 'popularNovels' && args[1] && typeof args[1] === 'object') {
                     args[1].filters = window.__plugin.filters || {};
                 }

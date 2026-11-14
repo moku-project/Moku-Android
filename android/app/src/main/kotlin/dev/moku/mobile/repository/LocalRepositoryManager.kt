@@ -2,7 +2,9 @@ package dev.moku.mobile.repository
 
 import android.content.ContentValues
 import android.content.Context
+import android.content.pm.PackageManager
 import android.database.sqlite.SQLiteDatabase
+import android.net.Uri
 import dev.moku.mobile.backend.MediaContentType
 import dev.moku.mobile.extension.ExtensionInstaller
 import dev.moku.mobile.extension.ExtensionLoader
@@ -10,7 +12,13 @@ import dev.moku.mobile.library.LocalLibraryDatabase
 import dev.moku.mobile.library.getLongOrNull
 import dev.moku.mobile.library.getStringOrNull
 import kotlinx.coroutines.Dispatchers
+import dev.moku.mobile.novel.NovelPluginCache
+import eu.kanade.tachiyomi.network.NetworkHelper
 import kotlinx.coroutines.withContext
+import okhttp3.Request
+import uy.kohesive.injekt.injectLazy
+import java.io.File
+import java.io.IOException
 
 data class RepositoryEntity(val id: Long, val indexUrl: String, val name: String?, val contentType: MediaContentType, val lastSyncedAt: Long?)
 data class AvailableExtensionEntity(
@@ -22,18 +30,11 @@ data class InstalledExtensionEntity(
     val contentType: MediaContentType, val lang: String, val installedAt: Long, val enabled: Boolean,
 )
 
-/**
- * The on-device counterpart of Tsunagu's `Repositories`/`Extensions`/`InstalledExtensions`/
- * `installExtension`/`uninstallExtension` GraphQL surface — but for extensions this app loads
- * and runs itself via [ExtensionLoader], not ones a server sandboxes. Previously "installed"
- * meant only "an APK file sits in app-private storage" ([ExtensionInstaller]); this adds the
- * missing bookkeeping layer (which repo it came from, its declared name/version/contentType,
- * enabled/disabled) the way desktop's extension management screen expects to query.
- */
 class LocalRepositoryManager(private val context: Context) {
     private val db: LocalLibraryDatabase = LocalLibraryDatabase.get(context)
     private val indexClient = GenericRepoIndexClient()
     private val installer = ExtensionInstaller(context)
+    private val network: NetworkHelper by injectLazy()
 
     suspend fun addRepository(indexUrl: String, name: String?, contentType: MediaContentType): RepositoryEntity = withContext(Dispatchers.IO) {
         val id = db.writableDatabase.insertWithOnConflict(
@@ -124,14 +125,59 @@ class LocalRepositoryManager(private val context: Context) {
         }
     }
 
-    /** Downloads+installs the APK and records it as installed — actual loading is [ExtensionLoader]'s job. */
     suspend fun installExtension(ext: AvailableExtensionEntity, contentType: MediaContentType): InstalledExtensionEntity = withContext(Dispatchers.IO) {
-        installer.installFromUrl(ext.packageName, ext.apkUrl)
-        val installed = InstalledExtensionEntity(
-            packageName = ext.packageName, repositoryId = ext.repositoryId, name = ext.name,
-            versionName = ext.versionName, contentType = contentType, lang = ext.lang,
-            installedAt = System.currentTimeMillis(), enabled = true,
+        if (contentType == MediaContentType.NOVEL) {
+            val js = network.client.newCall(Request.Builder().url(ext.apkUrl).build()).execute().use { response ->
+                if (!response.isSuccessful) throw IOException("Couldn't download ${ext.name} (HTTP ${response.code})")
+                response.body.string()
+            }
+            NovelPluginCache.save(context, ext.packageName, js)
+        } else {
+            installer.installFromUrl(ext.packageName, ext.apkUrl)
+        }
+        record(
+            InstalledExtensionEntity(
+                packageName = ext.packageName, repositoryId = ext.repositoryId, name = ext.name,
+                versionName = ext.versionName, contentType = contentType, lang = ext.lang,
+                installedAt = System.currentTimeMillis(), enabled = true,
+            ),
         )
+    }
+
+    suspend fun installFromFile(uri: Uri): InstalledExtensionEntity = withContext(Dispatchers.IO) {
+        val tmp = File(context.cacheDir, "sideload-${System.nanoTime()}.apk")
+        try {
+            context.contentResolver.openInputStream(uri)!!.use { input -> tmp.outputStream().use { input.copyTo(it) } }
+            val pm = context.packageManager
+            val info = pm.getPackageArchiveInfo(tmp.path, PackageManager.GET_META_DATA) ?: error("That file isn't an APK")
+            val app = info.applicationInfo ?: error("That file isn't an APK")
+            app.sourceDir = tmp.path
+            app.publicSourceDir = tmp.path
+            val meta = app.metaData
+            val type = when {
+                meta?.containsKey("tachiyomi.animeextension.class") == true -> MediaContentType.ANIME
+                meta?.containsKey("tachiyomi.extension.class") == true -> MediaContentType.MANGA
+                else -> error("That APK isn't a Mihon or Aniyomi extension")
+            }
+            installer.installFromFile(info.packageName, tmp)
+            record(
+                InstalledExtensionEntity(
+                    packageName = info.packageName,
+                    repositoryId = null,
+                    name = pm.getApplicationLabel(app).toString().removePrefix("Tachiyomi: ").removePrefix("Aniyomi: "),
+                    versionName = info.versionName.orEmpty(),
+                    contentType = type,
+                    lang = info.packageName.split('.').dropLast(1).lastOrNull().orEmpty(),
+                    installedAt = System.currentTimeMillis(),
+                    enabled = true,
+                ),
+            )
+        } finally {
+            tmp.delete()
+        }
+    }
+
+    private fun record(installed: InstalledExtensionEntity): InstalledExtensionEntity {
         db.writableDatabase.insertWithOnConflict(
             "installed_extensions", null,
             ContentValues().apply {
@@ -146,11 +192,12 @@ class LocalRepositoryManager(private val context: Context) {
             },
             SQLiteDatabase.CONFLICT_REPLACE,
         )
-        installed
+        return installed
     }
 
     suspend fun uninstallExtension(packageName: String) = withContext(Dispatchers.IO) {
         installer.uninstall(packageName)
+        NovelPluginCache.delete(context, packageName)
         db.writableDatabase.delete("installed_extensions", "packageName = ?", arrayOf(packageName))
         Unit
     }

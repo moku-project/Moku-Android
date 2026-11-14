@@ -6,18 +6,9 @@ import eu.kanade.tachiyomi.source.model.FilterList
 import eu.kanade.tachiyomi.source.model.Page
 import eu.kanade.tachiyomi.source.model.SChapter
 import eu.kanade.tachiyomi.source.model.SManga
+import eu.kanade.tachiyomi.source.online.HttpSource
 
-/**
- * [ContentBackend] wrapping one real Keiyoushi `Source` loaded on-device via
- * [dev.moku.mobile.extension.ExtensionLoader] — the local, no-server counterpart to
- * [dev.moku.mobile.remote.RemoteTsunaguBackend]. Everything here runs the extension's
- * own network/parsing code directly on the phone; nothing goes through a Tsunagu server.
- *
- * Mangas/chapters are addressed by the source's own opaque `url` field (Tachiyomi's
- * convention — `SManga.url`/`SChapter.url` double as the stable id), so [BackendMedia.id]
- * and [BackendUnit.id] are just that url, not a separately-generated id like the remote
- * backend's DB-assigned ids.
- */
+/** A manga extension running on the phone. Titles and chapters are keyed by the source's own url. */
 class LocalMangaBackend(
     private val source: Source,
     packageName: String,
@@ -70,6 +61,7 @@ class LocalMangaBackend(
     }
 
     private fun SManga.cacheAndConvert(): BackendMedia {
+        (source as? HttpSource)?.let { CoverHeaders.remember(thumbnail_url, it.headers.toMap()) }
         mangaCache[url] = this
         return BackendMedia(
             id = url,
@@ -79,11 +71,10 @@ class LocalMangaBackend(
             thumbnailUrl = thumbnail_url,
             description = description,
             status = status.toStatusString(),
-            authors = author?.split(",")?.map { it.trim() }.orEmpty(),
-            artists = artist?.split(",")?.map { it.trim() }.orEmpty(),
-            genres = genre?.split(",")?.map { it.trim() }.orEmpty(),
-            // "favorite"/library membership is app-level state (this app's own library DB,
-            // not yet built), not something the extension's SManga model carries.
+            authors = author?.split(",")?.map { it.trim() }?.filter { it.isNotEmpty() }.orEmpty(),
+            artists = artist?.split(",")?.map { it.trim() }?.filter { it.isNotEmpty() }.orEmpty(),
+            genres = genre?.split(",")?.map { it.trim() }?.filter { it.isNotEmpty() }.orEmpty(),
+            // The extension knows nothing about the library.
             inLibrary = false,
         )
     }
@@ -111,13 +102,22 @@ class LocalMangaBackend(
         else -> "UNKNOWN"
     }
 
+    private fun okhttp3.Headers.toMap(): Map<String, String> = names().associateWith { get(it).orEmpty() }
+
     private fun Page.toBackendPageImage(index: Int): BackendPageImage {
-        // Local sources resolve the actual image URL lazily via imageUrl/fetchImageUrl in
-        // some extensions; imageUrl is already populated for the common case (HttpSource
-        // sets it directly from pageListParse). A reader consuming this should call back
-        // into the source for imageUrl==null pages — left as a follow-up, not needed for
-        // the sources tested so far (MangaTaro populates imageUrl directly).
-        return BackendPageImage(index = index, imageUrl = imageUrl.orEmpty())
+        val http = source as? HttpSource
+        val page = this
+        return BackendPageImage(
+            index = index,
+            imageUrl = imageUrl ?: "$url#$index",
+            headers = http?.headers?.toMap().orEmpty(),
+            open = http?.let { s ->
+                suspend {
+                    if (page.imageUrl == null) page.imageUrl = s.getImageUrl(page)
+                    s.getImage(page)
+                }
+            },
+        )
     }
 
     private fun Filter<*>.toBackendFilter(): BackendFilter = when (this) {
@@ -132,9 +132,7 @@ class LocalMangaBackend(
     }
 
     private fun List<BackendFilter>.toSourceFilterList(): FilterList {
-        // Filters are stateful objects the source instance itself created (via getFilterList());
-        // we mutate the same instances in place rather than reconstructing new Filter<*> objects,
-        // since sources often close over their own filter instances in searchMangaRequest().
+        // Sources keep references to their own filter objects, so these are set in place, not rebuilt.
         val live = source.getFilterList()
         forEachIndexed { index, backendFilter -> applyState(live.list.getOrNull(index), backendFilter) }
         return live

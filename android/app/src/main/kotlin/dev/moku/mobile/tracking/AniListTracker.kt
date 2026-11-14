@@ -20,13 +20,7 @@ import okhttp3.RequestBody.Companion.toRequestBody
 import uy.kohesive.injekt.injectLazy
 import java.io.IOException
 
-/**
- * Direct Kotlin port of `internal/tracker/anilist.go` — same GraphQL endpoint
- * (`https://graphql.anilist.co`), same implicit-grant auth URL, same queries. No server
- * involved at all: the token comes back to the browser directly (AniList's
- * `response_type=token`), so this talks to AniList's API exactly the way Tsunagu's own
- * Go code does, just from the phone instead of the server.
- */
+/** Port of Tsunagu's AniList tracker. Implicit-grant sign-in, so no client secret is needed. */
 class AniListTracker(private val clientId: String = DEFAULT_CLIENT_ID) : TrackerService {
     private val network: NetworkHelper by injectLazy()
     private val json = Json { ignoreUnknownKeys = true }
@@ -154,7 +148,7 @@ class AniListTracker(private val clientId: String = DEFAULT_CLIENT_ID) : Tracker
             url = media["siteUrl"]?.jsonPrimitive?.contentOrNull.orEmpty(),
             status = entry?.get("status")?.jsonPrimitive?.contentOrNull?.let { statusFromAniList(it) } ?: TrackStatus.PLAN_TO_READ,
             lastChapterRead = entry?.get("progress")?.jsonPrimitive?.double ?: 0.0,
-            totalChapters = media["chapters"]?.jsonPrimitive?.int ?: 0,
+            totalChapters = media[if (media["type"]?.jsonPrimitive?.contentOrNull == "ANIME") "episodes" else "chapters"]?.jsonPrimitive?.int ?: 0,
             score = entry?.get("score")?.jsonPrimitive?.double ?: 0.0,
         )
     }
@@ -166,6 +160,8 @@ class AniListTracker(private val clientId: String = DEFAULT_CLIENT_ID) : Tracker
             put("status", statusToAniList(track.status))
             put("progress", track.lastChapterRead.toInt())
             put("score", track.score)
+            track.startedAt?.let { put("startedAt", fuzzyDate(it)) }
+            track.finishedAt?.let { put("completedAt", fuzzyDate(it)) }
         }
         val data = query(auth.accessToken, PUSH_DOC, vars)
         val entry = data["SaveMediaListEntry"]!!.jsonObject
@@ -225,15 +221,15 @@ class AniListTracker(private val clientId: String = DEFAULT_CLIENT_ID) : Tracker
         private val BIND_DOC = """
             query(${'$'}id: Int) {
               Media(id: ${'$'}id) {
-                id siteUrl chapters status title { romaji english native }
+                id siteUrl chapters episodes type status title { romaji english native }
                 mediaListEntry { id status score progress }
               }
             }
         """.trimIndent()
 
         private val PUSH_DOC = """
-            mutation(${'$'}mediaId: Int, ${'$'}status: MediaListStatus, ${'$'}progress: Int, ${'$'}score: Float) {
-              SaveMediaListEntry(mediaId: ${'$'}mediaId, status: ${'$'}status, progress: ${'$'}progress, score: ${'$'}score) {
+            mutation(${'$'}mediaId: Int, ${'$'}status: MediaListStatus, ${'$'}progress: Int, ${'$'}score: Float, ${'$'}startedAt: FuzzyDateInput, ${'$'}completedAt: FuzzyDateInput) {
+              SaveMediaListEntry(mediaId: ${'$'}mediaId, status: ${'$'}status, progress: ${'$'}progress, score: ${'$'}score, startedAt: ${'$'}startedAt, completedAt: ${'$'}completedAt) {
                 id status score progress
               }
             }
@@ -245,6 +241,10 @@ class AniListTracker(private val clientId: String = DEFAULT_CLIENT_ID) : Tracker
             val normalized = s.replace("#", "&")
             val query = normalized.substringAfter("?", normalized)
             return query.split("&").firstOrNull { it.startsWith("access_token=") }?.removePrefix("access_token=")
+        }
+
+        private fun fuzzyDate(millis: Long) = java.time.Instant.ofEpochMilli(millis).atZone(java.time.ZoneId.systemDefault()).toLocalDate().let { d ->
+            buildJsonObject { put("year", d.year); put("month", d.monthValue); put("day", d.dayOfMonth) }
         }
 
         private fun statusFromAniList(s: String): TrackStatus = when (s) {

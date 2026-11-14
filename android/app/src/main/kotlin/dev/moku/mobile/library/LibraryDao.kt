@@ -105,6 +105,10 @@ class FolderDao(private val db: LocalLibraryDatabase) {
         Unit
     }
 
+    suspend fun setSortOrder(id: Long, sortOrder: Int) = withContext(Dispatchers.IO) {
+        db.writableDatabase.execSQL("UPDATE folders SET sortOrder = ? WHERE id = ?", arrayOf<Any>(sortOrder, id))
+    }
+
     suspend fun getAll(): List<FolderEntity> = withContext(Dispatchers.IO) {
         db.readableDatabase.query("folders", null, null, null, null, null, "sortOrder ASC").use { c ->
             buildList {

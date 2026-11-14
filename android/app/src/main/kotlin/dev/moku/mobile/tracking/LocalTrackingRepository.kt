@@ -25,14 +25,7 @@ data class TrackLinkEntity(
     val score: Double, val lastChapterRead: Double, val totalChapters: Int,
 )
 
-/**
- * Local-mode counterpart of [dev.moku.mobile.remote.RemoteTrackingRepository] — same
- * AniList/MAL surface, but talking to those APIs directly from the phone via
- * [AniListTracker]/[MalTracker] instead of proxying through a Tsunagu server, since there
- * isn't one in local mode. Track-link rows are stored per local media (`local:` originId
- * only — never mixed with remote data, same rule as everything else in this package's
- * neighbourhood, see [dev.moku.mobile.backend.ContentBackend]'s kdoc).
- */
+/** Tracking for the phone's own library, talking to AniList and MAL directly. */
 class LocalTrackingRepository(context: Context) {
     private val db = LocalLibraryDatabase.get(context)
     private val store = TrackerAccountStore(context)
@@ -53,6 +46,8 @@ class LocalTrackingRepository(context: Context) {
 
     fun logout(trackerKey: String) = store.clear(trackerKey)
 
+    fun scoreOptions(trackerKey: String): List<String> = serviceFor(trackerKey).let { it.scoreOptions(store.get(it.key)) }
+
     suspend fun search(trackerKey: String, query: String, contentType: String): List<TrackSearchResult> {
         val svc = serviceFor(trackerKey)
         return svc.search(authFor(svc), query, contentType)
@@ -65,13 +60,18 @@ class LocalTrackingRepository(context: Context) {
         return upsertLink(originId, mediaId, trackerKey, track, title)
     }
 
-    suspend fun updateTrack(originId: String, mediaId: String, trackerKey: String, status: TrackStatus? = null, score: Double? = null, lastChapterRead: Double? = null): TrackLinkEntity {
+    suspend fun updateTrack(
+        originId: String, mediaId: String, trackerKey: String,
+        status: TrackStatus? = null, score: Double? = null, lastChapterRead: Double? = null,
+        startedAt: Long? = null, finishedAt: Long? = null,
+    ): TrackLinkEntity {
         val existing = getTrackLink(originId, mediaId, trackerKey) ?: throw IllegalStateException("no track link for $originId/$mediaId/$trackerKey")
         val svc = serviceFor(trackerKey)
         val track = Track(
             remoteId = existing.remoteId, libraryId = existing.libraryId, title = existing.title, url = existing.url.orEmpty(),
             status = status ?: TrackStatus.entries[existing.status - 1], score = score ?: existing.score,
             lastChapterRead = lastChapterRead ?: existing.lastChapterRead, totalChapters = existing.totalChapters,
+            startedAt = startedAt, finishedAt = finishedAt,
         )
         val pushed = svc.push(authFor(svc), track)
         return upsertLink(originId, mediaId, trackerKey, pushed, existing.title)

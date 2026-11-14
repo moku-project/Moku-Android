@@ -5,7 +5,7 @@ import okhttp3.Response
 import java.io.IOException
 
 /**
- * Keiyoushi extensions refuse to run unless the default client has an interceptor by
+ * Current Mihon/Tachiyomi-format extensions refuse to run unless the default client has an interceptor by
  * this name. It only recognizes a Cloudflare challenge for now and fails the request
  * with a clear error; solving challenges in a WebView, as Mihon does, comes later.
  */

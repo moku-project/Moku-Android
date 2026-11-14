@@ -2,17 +2,7 @@ package dev.moku.mobile.library
 
 import dev.moku.mobile.backend.MediaContentType
 
-/**
- * On-device library persistence — **local-mode only**. There is no remote/local merge here:
- * every row is keyed by a `local:`-prefixed [dev.moku.mobile.backend.ContentBackend.originId]
- * (see that interface's kdoc). A connected Tsunagu server keeps its own library/progress/
- * downloads/tracking state server-side via its GraphQL API; this database exists only so
- * local, no-server usage isn't read-only-and-forgotten between app launches. Nothing here is
- * ever queried against, or written from, a [dev.moku.mobile.remote.RemoteTsunaguBackend].
- *
- * Plain data classes, not Room entities — see [LocalLibraryDatabase]'s kdoc for why this is a
- * hand-rolled SQLiteOpenHelper layer instead.
- */
+/** The phone's own library, plus the downloads and progress it keeps for server titles. */
 data class LibraryMediaEntity(
     val originId: String,
     val mediaId: String,
@@ -40,10 +30,7 @@ data class LibraryFolderCrossRef(
     val folderId: Long,
 )
 
-/**
- * Progress is keyed per unit (chapter/episode), not per media, so partially-read chapters
- * keep their own scroll/seek position independent of whether the whole media is "completed".
- */
+/** Per chapter or episode, so each keeps its own position. */
 data class ReadingProgressEntity(
     val originId: String,
     val mediaId: String,

@@ -2,8 +2,7 @@ package dev.moku.mobile.tracking
 
 import android.content.Context
 import androidx.core.content.edit
-import androidx.security.crypto.EncryptedSharedPreferences
-import androidx.security.crypto.MasterKey
+import dev.moku.mobile.core.SecurePrefs
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonNull
 import kotlinx.serialization.json.JsonPrimitive
@@ -14,23 +13,12 @@ import kotlinx.serialization.json.jsonPrimitive
 import kotlinx.serialization.json.long
 import kotlinx.serialization.json.put
 
-/**
- * Persists [TrackerAuth] per tracker key — same encrypted-storage posture as
- * [dev.moku.mobile.remote.TsunaguSession] for its bearer token, since these are equally
- * sensitive (AniList/MAL account access), not a plaintext SQLite column.
- */
+/** Tracker sign-ins, kept in encrypted storage. */
 class TrackerAccountStore(context: Context) {
-    private val prefs = run {
-        val masterKey = MasterKey.Builder(context).setKeyScheme(MasterKey.KeyScheme.AES256_GCM).build()
-        EncryptedSharedPreferences.create(
-            context, "tracker_accounts", masterKey,
-            EncryptedSharedPreferences.PrefKeyEncryptionScheme.AES256_SIV,
-            EncryptedSharedPreferences.PrefValueEncryptionScheme.AES256_GCM,
-        )
-    }
+    private val prefs = SecurePrefs.open(context, FILE)
 
     fun get(trackerKey: String): TrackerAuth? {
-        val raw = prefs.getString(trackerKey, null) ?: return null
+        val raw = prefs?.getString(trackerKey, null) ?: return null
         val obj = Json.parseToJsonElement(raw).jsonObject
         return TrackerAuth(
             accessToken = obj["accessToken"]!!.jsonPrimitive.content,
@@ -49,12 +37,16 @@ class TrackerAccountStore(context: Context) {
             put("username", auth.username?.let { JsonPrimitive(it) } ?: JsonNull)
             put("scoreFormat", auth.scoreFormat?.let { JsonPrimitive(it) } ?: JsonNull)
         }
-        prefs.edit { putString(trackerKey, json.toString()) }
+        prefs?.edit { putString(trackerKey, json.toString()) }
     }
 
     fun clear(trackerKey: String) {
-        prefs.edit { remove(trackerKey) }
+        prefs?.edit { remove(trackerKey) }
     }
 
-    fun keys(): Set<String> = prefs.all.keys
+    fun keys(): Set<String> = prefs?.all?.keys.orEmpty()
+
+    private companion object {
+        const val FILE = "tracker_accounts"
+    }
 }

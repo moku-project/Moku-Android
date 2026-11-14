@@ -31,6 +31,7 @@ class NetworkHelper(context: Context) {
         .addInterceptor(UncaughtExceptionInterceptor())
         .addInterceptor(UserAgentInterceptor(::defaultUserAgentProvider))
         .addInterceptor(CloudflareInterceptor())
+        .addInterceptor(dev.moku.mobile.remote.ServerAuthInterceptor)
         .build()
 
     // Extensions still reference this; the default client already has the Cloudflare interceptor.

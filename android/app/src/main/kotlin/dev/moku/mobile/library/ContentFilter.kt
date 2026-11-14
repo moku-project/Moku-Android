@@ -65,13 +65,7 @@ class ContentFilterDao(private val db: LocalLibraryDatabase) {
     }
 }
 
-/**
- * Kotlin port of `internal/contentfilter/matcher.go`'s keyword matching — genre/title/
- * description only (BackendMedia carries no per-tag weight metadata the way Tsunagu's
- * AniList-backfilled `TagFacet` does, so tag-weight rules are accepted but never match
- * locally; a real gap versus the server, not a silent approximation — flagged here rather
- * than pretended away).
- */
+/** Port of Tsunagu's keyword matcher. Sources carry no tag weights, so tag-weight rules never match on the phone. */
 object ContentFilterMatcher {
     private val alias = mapOf(
         "mature" to "adult", "18+" to "adult", "r-18" to "adult", "r18" to "adult",

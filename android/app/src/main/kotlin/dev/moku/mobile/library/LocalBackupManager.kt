@@ -6,23 +6,13 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import java.io.IOException
 
-/**
- * Raw backup/restore of the local library database — NOT Tsunagu's Mihon-format
- * export/import (`exportMihonBackup`/`importMihonBackup`), which is a whole separate
- * protobuf-schema interop feature for moving data in/out of the real Mihon/Tachiyomi app;
- * that's a meaningfully bigger feature (schema translation, not a file copy) and isn't
- * attempted here. This is the simpler, honest equivalent: a straight copy of
- * `moku_local_library.db` via Storage Access Framework, so a user can move their local
- * library/progress/downloads-metadata/tracking/filter-rules between devices or survive an
- * uninstall. Downloaded files themselves aren't included — only the DB that describes them.
- */
+/** Backs up and restores the library database file. Downloaded files aren't included. */
 class LocalBackupManager(private val context: Context) {
 
     /** [destUri] from an `ACTION_CREATE_DOCUMENT` intent result. */
     suspend fun exportTo(destUri: Uri): Long = withContext(Dispatchers.IO) {
         val db = LocalLibraryDatabase.get(context)
-        // Harmless if not in WAL mode (the default here) — makes sure nothing pending in a
-        // WAL file is left out of the copy if that ever changes.
+        // A no-op outside WAL mode; keeps the copy complete if that changes.
         runCatching { db.writableDatabase.execSQL("PRAGMA wal_checkpoint(FULL)") }
 
         val dbFile = context.getDatabasePath("moku_local_library.db")

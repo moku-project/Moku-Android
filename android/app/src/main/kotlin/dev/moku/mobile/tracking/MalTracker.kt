@@ -19,17 +19,8 @@ import java.net.URLDecoder
 import java.security.SecureRandom
 
 /**
- * Direct Kotlin port of `internal/tracker/mal.go`'s PKCE flow — `code_challenge_method=plain`
- * (the verifier itself is the challenge, no SHA256 needed), same public client id Tsunagu's
- * server defaults to. **Caveat this port can't fully resolve on its own**: Tsunagu's Go code
- * sets `redirect_uri` to *its own server's* callback route
- * (`{cfg.PublicURL}/api/tracker/mal/callback`), which is registered with MAL for that shared
- * client id. Without a server, this omits `redirect_uri` entirely, which only works if MAL
- * accepts a request with none for this client id (single registered default) — if MAL instead
- * requires an explicit match, this will fail at [authUrl] time with an invalid_request error,
- * and the real fix would be registering a separate MAL app with a redirect URI this app
- * actually controls (an Android custom-scheme deep link). Flagging this rather than papering
- * over it: it's untested against a real MAL login in this session.
+ * Port of Tsunagu's MAL tracker (PKCE, plain challenge). It sends no redirect_uri, since Tsunagu's is its own
+ * server's callback; if MAL rejects that, this needs its own MAL app with a deep-link redirect.
  */
 class MalTracker(
     private val clientId: String = DEFAULT_CLIENT_ID,
@@ -194,6 +185,8 @@ class MalTracker(
             .apply {
                 if (kind == "anime") add("num_watched_episodes", track.lastChapterRead.toInt().toString())
                 else add("num_chapters_read", track.lastChapterRead.toInt().toString())
+                track.startedAt?.let { add("start_date", isoDate(it)) }
+                track.finishedAt?.let { add("finish_date", isoDate(it)) }
             }
             .build()
         withContext(Dispatchers.IO) {
@@ -205,6 +198,8 @@ class MalTracker(
         }
         return bind(auth, track.remoteId)
     }
+
+    private fun isoDate(millis: Long) = java.time.Instant.ofEpochMilli(millis).atZone(java.time.ZoneId.systemDefault()).toLocalDate().toString()
 
     override fun scoreOptions(auth: TrackerAuth?): List<String> = (0..10).map { it.toString() }
 

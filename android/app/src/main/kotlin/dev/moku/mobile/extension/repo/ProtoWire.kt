@@ -1,12 +1,6 @@
 package dev.moku.mobile.extension.repo
 
-/**
- * Minimal hand-rolled protobuf wire-format reader — no `.proto` schema is published for
- * Keiyoushi's `index.pb`, so there's nothing to run `protoc` against. The field numbers
- * below are lifted directly from Tsunagu's own from-scratch decoder
- * (`backend/internal/repository/protobuf.go`), which already reverse-engineered this
- * exact index format; this is a straight Kotlin port of that reader, not a re-derivation.
- */
+/** Hand-rolled protobuf reader: no .proto is published for the repo index format. Port of Tsunagu's decoder. */
 class ProtoReader(private val bytes: ByteArray) {
     var pos = 0
         private set

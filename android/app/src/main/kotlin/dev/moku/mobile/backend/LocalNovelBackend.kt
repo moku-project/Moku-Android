@@ -2,18 +2,7 @@ package dev.moku.mobile.backend
 
 import dev.moku.mobile.novel.LoadedNovelExtension
 
-/**
- * [ContentBackend] wrapping one real Keiyoushi/LNReader novel plugin loaded on-device via
- * [dev.moku.mobile.novel.NovelPluginLoader] — the novel counterpart of [LocalMangaBackend]/
- * [LocalAnimeBackend]. Unlike those two (real Android APK/dex, DexClassLoader), novel
- * plugins are plain JS run inside a WebView-hosted runtime (see [dev.moku.mobile.novel.NovelJsRuntime]);
- * that's a genuinely different loading mechanism, not just a different vendored runtime,
- * which is why it's a separate backend class rather than a third variant of the other two.
- *
- * Known gaps versus the manga/anime backends: [filterOptions] returns nothing (per-source
- * filter schemas aren't wired up yet) and [unitContent] returns raw plugin-supplied HTML/text
- * with no htmlparser2-based plugins supported (see [dev.moku.mobile.novel.NovelBootstrapJs] kdoc).
- */
+/** A novel plugin running on the phone in [dev.moku.mobile.novel.NovelJsRuntime]. */
 class LocalNovelBackend(
     private val plugin: LoadedNovelExtension,
     packageName: String,
@@ -52,8 +41,8 @@ class LocalNovelBackend(
             thumbnailUrl = novel.cover,
             description = novel.summary,
             status = novel.status,
-            authors = novel.author?.split(",")?.map { it.trim() }.orEmpty(),
-            genres = novel.genres?.split(",")?.map { it.trim() }.orEmpty(),
+            authors = novel.author?.split(",")?.map { it.trim() }?.filter { it.isNotEmpty() }.orEmpty(),
+            genres = novel.genres?.split(",")?.map { it.trim() }?.filter { it.isNotEmpty() }.orEmpty(),
         )
     }
 

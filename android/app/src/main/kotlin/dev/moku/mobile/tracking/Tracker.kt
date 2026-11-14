@@ -24,6 +24,9 @@ data class Track(
     val lastChapterRead: Double = 0.0,
     val totalChapters: Int = 0,
     val score: Double = 0.0,
+    // Only set when a status change starts or finishes the entry; null leaves the remote date alone.
+    val startedAt: Long? = null,
+    val finishedAt: Long? = null,
 )
 
 data class TrackSearchResult(
@@ -49,18 +52,7 @@ data class TrackLibraryEntry(
     val totalChapters: Int,
 )
 
-/**
- * Kotlin port of Tsunagu's `tracker.Service` interface (`internal/tracker/tracker.go`) — same
- * shape, same semantics, so [AniListTracker]/[MalTracker] are direct ports of
- * `internal/tracker/anilist.go`/`mal.go` rather than a reinterpretation. This is what makes
- * local-mode tracking possible at all without a server: AniList's implicit-grant flow needs no
- * client secret (the token comes back directly to the browser), and MAL's flow is PKCE with
- * `code_challenge_method=plain` (no secret needed either) — both trackers' client ids here are
- * the same public ones Tsunagu itself uses (`49724` for AniList, Tsunagu's default MAL client
- * id), since neither is a secret credential (an OAuth client id is not confidential for a
- * native/public client — only a client *secret* would be, and MAL's is deliberately left blank
- * for the PKCE flow server-side too).
- */
+/** Port of Tsunagu's tracker interface. Both trackers use public client ids, which aren't secrets. */
 interface TrackerService {
     val key: String
     val name: String

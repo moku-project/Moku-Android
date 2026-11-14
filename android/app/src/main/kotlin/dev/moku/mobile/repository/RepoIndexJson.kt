@@ -8,6 +8,8 @@ import kotlinx.coroutines.withContext
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.Json
 import okhttp3.Request
+import org.json.JSONArray
+import org.json.JSONObject
 import uy.kohesive.injekt.injectLazy
 import java.io.IOException
 
@@ -22,50 +24,71 @@ private data class JsonRepoExtension(
     val nsfw: Int = 0,
 )
 
-/**
- * Both extension repos this app targets (Keiyoushi's manga repo, Aniyomi's anime repo) are
- * built by the same Tachiyomi/Mihon repo-generator tooling, but only one of the two formats
- * it emits actually works for each in practice: Keiyoushi's `index.pb` carries a fully
- * resolved absolute `apkUrl` per extension (used by [ExtensionRepositoryClient] already);
- * Aniyomi's repo doesn't publish an `index.pb` at all (confirmed: 404), only `index.min.json`,
- * whose `apk` field is a bare filename you resolve yourself as `<repoBase>apk/<apk>` — which
- * in turn 404s for Keiyoushi's actual APK hosting (a different CDN, not the `apk/` convention).
- * So this tries the protobuf index first and falls back to the JSON index + convention-based
- * apkUrl, rather than assuming either format alone covers every repo a user might add.
- */
+// Resolves a repo the way Tsunagu does: a repo.json's index_v2 first (some repos serve a
+// placeholder index.min.json to apps that skip it), then index.pb, then the JSON index.
 class GenericRepoIndexClient {
     private val network: NetworkHelper by injectLazy()
     private val protobufClient = ExtensionRepositoryClient()
     private val json = Json { ignoreUnknownKeys = true }
 
-    /** [repoBaseUrl] is the repo root, e.g. "https://raw.githubusercontent.com/keiyoushi/extensions/repo/". */
-    suspend fun fetchIndex(repoBaseUrl: String): List<RepoExtension> {
-        val base = repoBaseUrl.trimEnd('/') + "/"
-        return try {
-            protobufClient.fetchIndex("${base}index.pb")
-        } catch (_: Exception) {
-            fetchJsonIndex(base)
-        }
+    suspend fun fetchIndex(url: String): List<RepoExtension> {
+        val given = url.trim()
+        val isFile = given.endsWith(".json") || given.endsWith(".pb")
+        val dir = if (isFile) given.substringBeforeLast('/') + "/" else given.trimEnd('/') + "/"
+
+        indexV2(dir)?.let { v2 -> runCatching { return protobufClient.fetchIndex(v2) } }
+        if (given.endsWith(".pb")) return protobufClient.fetchIndex(given)
+        if (!given.endsWith(".json")) runCatching { return protobufClient.fetchIndex("${dir}index.pb") }
+        return fetchJsonIndex(dir, if (given.endsWith(".json") && !given.endsWith("repo.json")) given else "${dir}index.min.json")
     }
 
-    private suspend fun fetchJsonIndex(base: String): List<RepoExtension> = withContext(Dispatchers.IO) {
-        val request = Request.Builder().url("${base}index.min.json").build()
-        network.client.newCall(request).execute().use { response ->
-            if (!response.isSuccessful) throw IOException("Failed to fetch $base index.min.json: HTTP ${response.code}")
-            val entries = json.decodeFromString<List<JsonRepoExtension>>(response.body.string())
-            entries.map {
+    private suspend fun indexV2(dir: String): String? = withContext(Dispatchers.IO) {
+        runCatching {
+            network.client.newCall(Request.Builder().url("${dir}repo.json").build()).execute().use { response ->
+                if (!response.isSuccessful) return@use null
+                JSONObject(response.body.string()).optString("index_v2").ifBlank { null }
+            }
+        }.getOrNull()
+    }
+
+    private suspend fun fetchJsonIndex(dir: String, indexUrl: String): List<RepoExtension> = withContext(Dispatchers.IO) {
+        network.client.newCall(Request.Builder().url(indexUrl).build()).execute().use { response ->
+            if (!response.isSuccessful) throw IOException("Couldn't load $indexUrl (HTTP ${response.code})")
+            val body = response.body.string()
+            if (JSONArray(body).optJSONObject(0)?.has("pkg") == false) return@use lnReaderPlugins(body)
+            json.decodeFromString<List<JsonRepoExtension>>(body).map {
                 RepoExtension(
-                    name = it.name,
+                    name = it.name.removePrefix("Tachiyomi: ").removePrefix("Aniyomi: "),
                     packageName = it.pkg,
-                    apkUrl = "$base" + "apk/" + it.apk,
+                    apkUrl = "${dir}apk/${it.apk}",
                     jarUrl = "",
-                    iconUrl = "",
+                    iconUrl = "${dir}icon/${it.pkg}.png",
                     versionName = it.version,
                     versionCode = it.code,
                     isNsfw = it.nsfw != 0,
                     lang = it.lang,
                 )
             }
+        }
+    }
+
+    // LNReader plugin lists: each entry's url is the plugin's JS source.
+    private fun lnReaderPlugins(body: String): List<RepoExtension> {
+        val array = JSONArray(body)
+        return (0 until array.length()).mapNotNull { i ->
+            val o = array.getJSONObject(i)
+            val id = o.optString("id").ifBlank { return@mapNotNull null }
+            RepoExtension(
+                name = o.optString("name", id),
+                packageName = id,
+                apkUrl = o.optString("url"),
+                jarUrl = "",
+                iconUrl = o.optString("iconUrl"),
+                versionName = o.optString("version"),
+                versionCode = 0,
+                isNsfw = false,
+                lang = o.optString("lang").replace("‎", "").trim(),
+            )
         }
     }
 }
