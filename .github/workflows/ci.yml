@@ -1,0 +1,28 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "17"
+
+      - uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: "8.14.4"
+
+      - name: Fetch the Tsunagu core
+        run: scripts/fetch-tsunagu.sh
+
+      - name: Test and build
+        working-directory: android
+        run: gradle testDebugUnitTest assembleDebug

@@ -36,9 +36,7 @@
             emulatorVersion = "37.2.4";
             includeSystemImages = true;
             systemImageTypes = [ "google_apis_playstore" ];
-            # x86_64 for fast KVM-accelerated local emulation on this dev
-            # machine (no native code in the app, so ABI choice here is purely
-            # about emulator speed); arm64-v8a stays for real-device builds.
+            # x86_64 for the emulator, arm64-v8a for phones.
             abiVersions = [
               "arm64-v8a"
               "x86_64"
@@ -71,10 +69,7 @@
               export ANDROID_NDK_HOME=$(echo $ANDROID_HOME/ndk/*)
               export GRADLE_OPTS="-Dorg.gradle.project.android.aapt2FromMavenOverride=$ANDROID_HOME/build-tools/36.0.0/aapt2"
 
-              echo "Moku Mobile dev shell — JDK 17, Android SDK 34"
-              echo ""
-              echo "  ANDROID_HOME=$ANDROID_HOME"
-              echo "  cd android && ./gradlew tasks   (once the Gradle project is scaffolded)"
+              echo "Moku Mobile dev shell: JDK 17, Android SDK 36. Build with: cd android && gradle assembleDebug"
             '';
           };
 
