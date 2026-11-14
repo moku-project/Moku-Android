@@ -1,0 +1,8 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Android 11 and older; mirrors the cloud-backup rules in data_extraction_rules.xml. -->
+<full-backup-content>
+    <include domain="database" path="." />
+    <include domain="sharedpref" path="." />
+    <exclude domain="sharedpref" path="tsunagu_session.xml" />
+    <exclude domain="sharedpref" path="tracker_accounts.xml" />
+</full-backup-content>

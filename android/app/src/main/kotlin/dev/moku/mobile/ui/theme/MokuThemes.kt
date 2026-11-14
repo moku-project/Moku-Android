@@ -1,6 +1,8 @@
 package dev.moku.mobile.ui.theme
 
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.luminance
+import androidx.compose.ui.graphics.toArgb
 
 enum class MokuThemeId(val label: String) {
     DARK("Dark"),
@@ -85,4 +87,64 @@ object MokuPalettes {
         MokuThemeId.ORIGINAL -> Original
         MokuThemeId.WARM -> Warm
     }
+}
+
+data class ThemeToken(val key: String, val label: String, val get: (MokuPalette) -> Color, val set: (MokuPalette, Color) -> MokuPalette)
+
+data class ThemeTokenGroup(val label: String, val tokens: List<ThemeToken>)
+
+// Keys match desktop Moku's ThemeTokens, so theme files move between the two apps.
+val ThemeTokenGroups = listOf(
+    ThemeTokenGroup("Backgrounds", listOf(
+        ThemeToken("bg-void", "Void", { it.bgVoid }) { p, c -> p.copy(bgVoid = c) },
+        ThemeToken("bg-base", "Base", { it.bgBase }) { p, c -> p.copy(bgBase = c) },
+        ThemeToken("bg-surface", "Surface", { it.bgSurface }) { p, c -> p.copy(bgSurface = c) },
+        ThemeToken("bg-raised", "Raised", { it.bgRaised }) { p, c -> p.copy(bgRaised = c) },
+        ThemeToken("bg-overlay", "Overlay", { it.bgOverlay }) { p, c -> p.copy(bgOverlay = c) },
+        ThemeToken("bg-subtle", "Subtle", { it.bgSubtle }) { p, c -> p.copy(bgSubtle = c) },
+    )),
+    ThemeTokenGroup("Borders", listOf(
+        ThemeToken("border-dim", "Dim", { it.borderDim }) { p, c -> p.copy(borderDim = c) },
+        ThemeToken("border-base", "Base", { it.borderBase }) { p, c -> p.copy(borderBase = c) },
+        ThemeToken("border-strong", "Strong", { it.borderStrong }) { p, c -> p.copy(borderStrong = c) },
+    )),
+    ThemeTokenGroup("Text", listOf(
+        ThemeToken("text-primary", "Primary", { it.textPrimary }) { p, c -> p.copy(textPrimary = c) },
+        ThemeToken("text-secondary", "Secondary", { it.textSecondary }) { p, c -> p.copy(textSecondary = c) },
+        ThemeToken("text-muted", "Muted", { it.textMuted }) { p, c -> p.copy(textMuted = c) },
+        ThemeToken("text-faint", "Faint", { it.textFaint }) { p, c -> p.copy(textFaint = c) },
+    )),
+    ThemeTokenGroup("Accent", listOf(
+        ThemeToken("accent", "Accent", { it.accent }) { p, c -> p.copy(accent = c) },
+        ThemeToken("accent-dim", "Dim", { it.accentDim }) { p, c -> p.copy(accentDim = c) },
+        ThemeToken("accent-muted", "Muted", { it.accentMuted }) { p, c -> p.copy(accentMuted = c) },
+        ThemeToken("accent-fg", "Foreground", { it.accentFg }) { p, c -> p.copy(accentFg = c) },
+        ThemeToken("accent-bright", "Bright", { it.accentBright }) { p, c -> p.copy(accentBright = c) },
+    )),
+)
+
+private val AllTokens = ThemeTokenGroups.flatMap { it.tokens }
+
+fun MokuPalette.toTokens(): Map<String, String> = AllTokens.associate { it.key to it.get(this).toHex() }
+
+fun MokuPalette.withTokens(tokens: Map<String, String>): MokuPalette =
+    AllTokens.fold(this) { palette, token -> tokens[token.key]?.let(::parseHexColor)?.let { token.set(palette, it) } ?: palette }
+        .withDerivedLightness()
+
+fun MokuPalette.withDerivedLightness(): MokuPalette = copy(isLight = bgBase.luminance() > 0.5f)
+
+fun Color.toHex(): String = "#%06X".format(toArgb() and 0xFFFFFF)
+
+// CSS hex: #rgb, #rrggbb or #rrggbbaa.
+fun parseHexColor(raw: String): Color? {
+    val hex = raw.trim().removePrefix("#")
+    if (!hex.all { it.isDigit() || it.lowercaseChar() in 'a'..'f' }) return null
+    val full = when (hex.length) {
+        3 -> hex.map { "$it$it" }.joinToString("")
+        6, 8 -> hex
+        else -> return null
+    }
+    val rgb = full.substring(0, 6).toLong(16)
+    val alpha = if (full.length == 8) full.substring(6, 8).toInt(16) else 0xFF
+    return Color(((alpha.toLong() shl 24) or rgb).toInt())
 }

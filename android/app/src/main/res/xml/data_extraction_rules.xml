@@ -1,0 +1,19 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  Sign-in tokens are encrypted with a Keystore key that never leaves the phone, so a restored copy can't be
+  decrypted; they're left out and the new phone signs in again. Cloud backup is capped at 25 MB, so it carries
+  the library and settings, while a cable/Wi-Fi transfer also brings downloads and extensions.
+-->
+<data-extraction-rules>
+    <cloud-backup>
+        <include domain="database" path="." />
+        <include domain="sharedpref" path="." />
+        <exclude domain="sharedpref" path="tsunagu_session.xml" />
+        <exclude domain="sharedpref" path="tracker_accounts.xml" />
+    </cloud-backup>
+    <device-transfer>
+        <exclude domain="sharedpref" path="tsunagu_session.xml" />
+        <exclude domain="sharedpref" path="tracker_accounts.xml" />
+        <exclude domain="file" path="tsunagu" />
+    </device-transfer>
+</data-extraction-rules>

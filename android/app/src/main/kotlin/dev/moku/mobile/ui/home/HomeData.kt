@@ -3,7 +3,7 @@ package dev.moku.mobile.ui.home
 import android.content.Context
 import android.util.Log
 import dev.moku.mobile.library.LibraryMediaEntity
-import dev.moku.mobile.library.LocalLibraryRepository
+import dev.moku.mobile.library.Libraries
 import dev.moku.mobile.library.ReadingProgressEntity
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
@@ -35,7 +35,7 @@ object HomeDataLoader {
 
     suspend fun load(context: Context): HomeState = withContext(Dispatchers.IO) {
         try {
-            val repo = LocalLibraryRepository(context)
+            val repo = Libraries.active(context)
             val library = repo.getLibrary()
             val allProgress = repo.getProgressSince(0L)
 
@@ -55,6 +55,8 @@ object HomeDataLoader {
             val upNextMedia = library
                 .filter { it.lastViewedAt != null }
                 .sortedByDescending { it.lastViewedAt }
+                // The most recent title is already the Continue reading card.
+                .drop(1)
                 .firstOrNull { media -> repo.nextUnread(media.originId, media.mediaId) != null }
             val upNext = upNextMedia?.let { toContinueReadingItem(it, allProgress) }
 

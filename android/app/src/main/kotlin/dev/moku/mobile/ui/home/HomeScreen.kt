@@ -1,5 +1,7 @@
 package dev.moku.mobile.ui.home
 
+import dev.moku.mobile.ui.components.rememberReselectListState
+import dev.moku.mobile.ui.components.pressable
 import androidx.annotation.DrawableRes
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
@@ -28,6 +30,8 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.collectAsState
+import dev.moku.mobile.remote.ServerSession
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
@@ -70,7 +74,8 @@ fun HomeScreen(
     var reloadToken by remember { mutableIntStateOf(0) }
     val colors = MokuTheme.colors
 
-    LaunchedEffect(reloadToken) {
+    val serverMode by ServerSession.serverMode.collectAsState()
+    LaunchedEffect(reloadToken, serverMode) {
         state = HomeDataLoader.load(context)
     }
 
@@ -78,8 +83,8 @@ fun HomeScreen(
         MokuTopBar(
             title = "Home",
             trailing = {
-                MokuHeaderAction(R.drawable.ph_magnifying_glass_light, "Search", onSearchClick)
-                MokuHeaderAction(R.drawable.ph_puzzle_piece_light, "Extensions", onExtensionsClick)
+                MokuHeaderAction(R.drawable.ph_magnifying_glass_light, "Search", onClick = onSearchClick)
+                MokuHeaderAction(R.drawable.ph_puzzle_piece_light, "Extensions", onClick = onExtensionsClick)
             },
         )
 
@@ -97,6 +102,7 @@ fun HomeScreen(
 
         LazyColumn(
             modifier = Modifier.fillMaxSize(),
+            state = rememberReselectListState(),
             contentPadding = PaddingValues(start = MokuSpacing.Sp4, end = MokuSpacing.Sp4, top = MokuSpacing.Sp1, bottom = MokuSpacing.Sp6),
             verticalArrangement = Arrangement.spacedBy(MokuSpacing.Sp5),
         ) {
@@ -111,11 +117,12 @@ fun HomeScreen(
                 Section("Activity", R.drawable.ph_clock_bold, trailing = "$total in $SHOWN_WEEKS weeks") { Heatmap(shown) }
             }
             item { Section("Up next") { UpNext(state.upNext, onSearchClick, onOpenMedia) } }
-            if (state.continueReading.size > 1) {
+            val recent = state.continueReading.drop(1).filter { it.media != state.upNext?.media }.take(5)
+            if (recent.isNotEmpty()) {
                 item {
                     Section("Recent") {
                         Card(padding = PaddingValues(horizontal = MokuSpacing.Sp3, vertical = MokuSpacing.Sp1)) {
-                            state.continueReading.drop(1).take(5).forEachIndexed { index, item ->
+                            recent.forEachIndexed { index, item ->
                                 if (index > 0) Divider()
                                 MediaRow(item, onOpenMedia)
                             }
@@ -171,10 +178,9 @@ private fun ContinueCard(item: ContinueReadingItem, onOpenMedia: (String, String
         modifier = Modifier
             .fillMaxWidth()
             .height(172.dp)
-            .clip(shape)
+            .pressable(shape, onClick = open)
             .background(colors.bgSurface)
-            .border(1.dp, colors.borderDim, shape)
-            .clickable(onClick = open),
+            .border(1.dp, colors.borderDim, shape),
     ) {
         if (item.media.thumbnailUrl != null) {
             AsyncImage(
@@ -259,10 +265,9 @@ private fun AccentAction(text: String, @DrawableRes icon: Int, onClick: () -> Un
     Row(
         modifier = modifier
             .height(36.dp)
-            .clip(shape)
+            .pressable(shape, onClick = onClick)
             .background(colors.accentMuted)
             .border(1.dp, colors.accentDim, shape)
-            .clickable(onClick = onClick)
             .padding(horizontal = 14.dp),
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.spacedBy(6.dp, Alignment.CenterHorizontally),
@@ -279,10 +284,9 @@ private fun OutlineAction(text: String, modifier: Modifier = Modifier, @Drawable
     Row(
         modifier = modifier
             .height(36.dp)
-            .clip(shape)
+            .pressable(shape, onClick = onClick)
             .background(colors.bgRaised)
             .border(1.dp, colors.borderDim, shape)
-            .clickable(onClick = onClick)
             .padding(horizontal = 14.dp),
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.spacedBy(6.dp, Alignment.CenterHorizontally),

@@ -39,6 +39,7 @@ object MokuText {
     val title = TextStyle(fontFamily = MokuSansFamily, fontWeight = FontWeight.SemiBold, fontSize = 20.sp, lineHeight = 24.sp, letterSpacing = (-0.02).em)
     val heading = TextStyle(fontFamily = MokuSansFamily, fontWeight = FontWeight.SemiBold, fontSize = 17.sp, lineHeight = 22.sp, letterSpacing = (-0.01).em)
     val body = TextStyle(fontFamily = MokuSansFamily, fontWeight = FontWeight.Medium, fontSize = 14.sp, lineHeight = 19.sp)
+    val caption = TextStyle(fontFamily = MokuSansFamily, fontWeight = FontWeight.Normal, fontSize = 12.sp, lineHeight = 16.sp)
     val label = TextStyle(fontFamily = MokuMonoFamily, fontWeight = FontWeight.Normal, fontSize = 10.sp, lineHeight = 12.sp, letterSpacing = 0.06.em)
     val meta = TextStyle(fontFamily = MokuMonoFamily, fontWeight = FontWeight.Normal, fontSize = 11.sp, lineHeight = 15.sp, letterSpacing = 0.01.em)
     val sub = TextStyle(fontFamily = MokuMonoFamily, fontWeight = FontWeight.Normal, fontSize = 12.sp, lineHeight = 16.sp, letterSpacing = 0.01.em)
