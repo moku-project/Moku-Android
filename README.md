@@ -5,11 +5,7 @@
   </picture>
 </div>
 
-Moku for Android: manga, novels and anime in one library. [Tsunagu](https://github.com/moku-project/Tsunagu) runs inside the app, so nothing else needs to be installed. It can also connect to your own Tsunagu server.
-
-Moku Mobile is in open beta.
-
-Docs: https://moku-project.github.io/
+<br/>
 
 <div align="center">
 
@@ -19,6 +15,14 @@ Docs: https://moku-project.github.io/
 [![Discord](https://www.shieldcn.dev/discord/members/x97hj8zR72.svg?variant=outline&size=default)](https://discord.gg/x97hj8zR72)
 
 </div>
+
+<br/>
+
+Moku for Android: manga, novels and anime in one library. [Tsunagu](https://github.com/moku-project/Tsunagu) runs inside the app, so nothing else needs to be installed. It can also connect to your own Tsunagu server.
+
+Moku Mobile is in open beta.
+
+Docs: https://moku-project.github.io/
 
 ---
 
