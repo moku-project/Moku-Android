@@ -5,6 +5,12 @@
   </picture>
 </div>
 
+Moku for Android: manga, novels and anime in one library. [Tsunagu](https://github.com/moku-project/Tsunagu) runs inside the app, so nothing else needs to be installed. It can also connect to your own Tsunagu server.
+
+Moku Mobile is in open beta.
+
+Docs: https://moku-project.github.io/
+
 <div align="center">
 
 [![Release](https://www.shieldcn.dev/github/release/moku-project/Moku-Android.svg?variant=outline&size=default)](https://github.com/moku-project/Moku-Android/releases/latest)
@@ -13,14 +19,6 @@
 [![Discord](https://www.shieldcn.dev/discord/members/x97hj8zR72.svg?variant=outline&size=default)](https://discord.gg/x97hj8zR72)
 
 </div>
-
-<br/>
-
-Moku for Android: manga, novels and anime in one library. [Tsunagu](https://github.com/moku-project/Tsunagu) runs inside the app, so nothing else needs to be installed. It can also connect to your own Tsunagu server.
-
-Moku Mobile is in open beta.
-
-Docs: https://moku-project.github.io/
 
 ---
 
@@ -116,6 +114,8 @@ Don't mark a release as a pre-release: the in-app updater only sees the latest f
 Help and feedback on [Discord](https://discord.gg/x97hj8zR72), bugs on the [issue tracker](https://github.com/moku-project/Moku-Android/issues).
 
 [![Discord](https://www.shieldcn.dev/discord/members/x97hj8zR72.svg?variant=secondary&size=large)](https://discord.gg/x97hj8zR72)
+
+</div>
 
 ---
 
