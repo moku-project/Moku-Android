@@ -9,6 +9,7 @@ import dev.moku.mobile.backend.BackendUnitContent
 import dev.moku.mobile.backend.ContentBackend
 import dev.moku.mobile.backend.ContentBackendCapabilities
 import dev.moku.mobile.backend.MediaContentType
+import dev.moku.mobile.sync.ServerOrigin
 import kotlinx.serialization.json.JsonArray
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.buildJsonObject
@@ -19,27 +20,16 @@ import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
 import kotlinx.serialization.json.put
 
-/**
- * [ContentBackend] over a self-hosted Tsunagu instance's existing GraphQL API — the same
- * `search`/`popularManga`/`latestUpdates`/`resolveMedia` queries Moku's
- * `server-adapters/tsunagu/discovery.ts` already issues. Tsunagu is doing the actual
- * extension execution (manga/anime in its JVM sandbox, novels via its GraalVM JS
- * bridge); this class only ever talks HTTP+GraphQL, so it supports all three content
- * types identically regardless of what's implemented as a local on-device backend —
- * see [dev.moku.mobile.backend.ContentBackend]'s kdoc for why local/remote maturity differs.
- *
- * One instance wraps one remote `extensionId`; [contentType] comes from the extension's
- * own metadata (Tsunagu's `Extension.contentType`) rather than being assumed.
- */
+/** One extension on a Tsunagu server, which runs it; this side only speaks GraphQL. */
 class RemoteTsunaguBackend(
     private val client: TsunaguClient,
-    private val server: TsunaguServer,
+    private val instanceId: String,
     private val extensionId: String,
     override val displayName: String,
     override val contentType: MediaContentType,
 ) : ContentBackend {
 
-    override val originId: String = "remote:${server.baseUrl}#$extensionId"
+    override val originId: String = ServerOrigin.of(instanceId, contentType, extensionId)
 
     val capabilities = ContentBackendCapabilities(supportsOffline = false)
 
@@ -112,64 +102,47 @@ class RemoteTsunaguBackend(
 
     /** For anime this returns episodes; Tsunagu's `chapters` field is shared across content types (a chapter/episode both have number/title/uploadedAt). */
     override suspend fun unitList(mediaId: String): List<BackendUnit> {
-        val data = client.query(
-            """query ResolveMedia(${'$'}extensionId: ID!, ${'$'}externalId: String!) {
-                resolveMedia(extensionId: ${'$'}extensionId, externalId: ${'$'}externalId, syncChapters: true) {
+        suspend fun resolve(sync: Boolean) = client.query(
+            """query ResolveMedia(${'$'}extensionId: ID!, ${'$'}externalId: String!, ${'$'}sync: Boolean!) {
+                resolveMedia(extensionId: ${'$'}extensionId, externalId: ${'$'}externalId, syncChapters: ${'$'}sync) {
                     id
                     chapters { id mediaId externalId title number scanlator sourceOrder uploadedAt }
                 }
             }""",
-            buildJsonObject { put("extensionId", extensionId); put("externalId", mediaId) },
+            buildJsonObject { put("extensionId", extensionId); put("externalId", mediaId); put("sync", sync) },
         )
+        // When the source is down the server still has the chapters it last saw, and its downloads still open.
+        val data = try {
+            resolve(sync = true)
+        } catch (e: GraphQLException) {
+            resolve(sync = false)
+        }
         val media = data["resolveMedia"]!!.jsonObject
         val resolvedMediaId = media.str("id")
         return media["chapters"]?.jsonArray.orEmpty().map { it.jsonObject.toBackendUnit(resolvedMediaId) }
     }
 
     override suspend fun unitContent(mediaId: String, unitId: String): BackendUnitContent {
-        // Route shape confirmed against ContentHandler.ServeHTTP in
-        // backend/internal/api/rest/content.go: /content/{mediaId}/{chapterId}/(pages/{n 1-indexed}|video|text).
-        // {mediaId} there is Tsunagu's resolved DB id, NOT the extension's externalId a search result
-        // carries before it's ever been resolved — so resolve first, same as unitList does.
-        val data = client.query(
-            """query ResolveMediaForContent(${'$'}extensionId: ID!, ${'$'}externalId: String!) {
-                resolveMedia(extensionId: ${'$'}extensionId, externalId: ${'$'}externalId, syncChapters: true) {
-                    id
-                    chapters { id pageCount }
-                }
-            }""",
-            buildJsonObject { put("extensionId", extensionId); put("externalId", mediaId) },
-        )
-        val resolved = data["resolveMedia"]!!.jsonObject
-        val resolvedMediaId = resolved.str("id")
-        val base = server.baseUrl.trimEnd('/')
-        val contentBase = "$base/content/$resolvedMediaId/$unitId"
+        val server = ServerSession.current ?: throw AuthRequiredException()
+        // `pages` asks the server's source for the page list (or its download), the same field Moku reads.
+        val wantPages = contentType == MediaContentType.MANGA
+        val chapter = client.query(
+            "query Chapter(\$id: ID!) { chapter(id: \$id) { mediaId${if (wantPages) " pages" else ""} } }",
+            buildJsonObject { put("id", unitId) },
+        )["chapter"]?.takeIf { it !is kotlinx.serialization.json.JsonNull }?.jsonObject
+            ?: throw java.io.IOException("The server no longer has this chapter")
+        val contentBase = "${server.baseUrl}/content/${chapter.str("mediaId")}/$unitId"
 
         return when (contentType) {
-            MediaContentType.ANIME -> {
-                // Tsunagu resolves/transcodes video server-side (serveVideo/serveHLS/serveDASH) —
-                // the client just needs the URL, auth is via the same Bearer token as GraphQL.
-                BackendUnitContent.Video(
-                    streamUrl = "$contentBase/video",
-                    headers = server.token?.let { mapOf("Authorization" to "Bearer $it") }.orEmpty(),
-                )
-            }
-            MediaContentType.NOVEL -> {
-                // serveText returns the full chapter body for one unit — no pagination server-side.
-                BackendUnitContent.Text(html = client.rawGetText("$contentBase/text"))
-            }
-            MediaContentType.MANGA -> {
-                val pageCount = resolved["chapters"]!!.jsonArray
-                    .map { it.jsonObject }
-                    .firstOrNull { it.str("id") == unitId }
-                    ?.get("pageCount")?.jsonPrimitive?.int ?: 0
-
-                BackendUnitContent.Pages(
-                    // Pages are served 1-indexed (/pages/{pageNumber}) but BackendPageImage.index stays
-                    // 0-based to match the local backend's convention — the URL is adjusted here, not there.
-                    (0 until pageCount).map { index -> BackendPageImage(index = index, imageUrl = "$contentBase/pages/${index + 1}") },
-                )
-            }
+            MediaContentType.ANIME -> BackendUnitContent.Video(
+                streamUrl = "$contentBase/video",
+                headers = server.token?.let { mapOf("Authorization" to "Bearer $it") }.orEmpty(),
+            )
+            MediaContentType.NOVEL -> BackendUnitContent.Text(html = client.rawGetText("$contentBase/text"))
+            MediaContentType.MANGA -> BackendUnitContent.Pages(
+                chapter["pages"]?.takeIf { it !is kotlinx.serialization.json.JsonNull }?.jsonArray.orEmpty()
+                    .mapIndexed { index, url -> BackendPageImage(index = index, imageUrl = ServerSession.absolute(url.jsonPrimitive.content)!!) },
+            )
         }
     }
 
@@ -186,7 +159,7 @@ class RemoteTsunaguBackend(
             originId = originId,
             contentType = contentType,
             title = str("title"),
-            thumbnailUrl = strOrNull("thumbnailUrl"),
+            thumbnailUrl = ServerSession.absolute(strOrNull("thumbnailUrl")),
             description = strOrNull("description"),
             status = strOrNull("status"),
             authors = strOrNull("author")?.split(",")?.map { it.trim() }.orEmpty(),
@@ -203,6 +176,7 @@ class RemoteTsunaguBackend(
         title = strOrNull("title"),
         number = this["number"]?.jsonPrimitive?.contentOrNull?.toFloatOrNull(),
         scanlator = strOrNull("scanlator"),
+        uploadedAt = strOrNull("uploadedAt")?.let { runCatching { java.time.OffsetDateTime.parse(it).toInstant().toEpochMilli() }.getOrNull() },
     )
 
     private fun JsonObject.toBackendFilter(): BackendFilter {

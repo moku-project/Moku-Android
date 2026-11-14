@@ -10,26 +10,8 @@ import kotlinx.serialization.json.jsonPrimitive
 import kotlinx.serialization.json.put
 
 /**
- * AniList/MAL tracking against a connected Tsunagu server — the server holds the actual
- * tracker OAuth client id/secret and does the token exchange; this is a thin GraphQL client
- * over that, plus the two real login shapes Tsunagu supports (confirmed against
- * `internal/tracker/anilist.go`/`mal.go` and mirrored from Moku desktop's
- * `TrackingSettings.svelte`):
- *
- *  - **AniList**: implicit-grant OAuth with no server callback. [Tracker.authUrl] opens
- *    AniList's consent screen directly; AniList redirects to a URL whose fragment contains
- *    `access_token=...` with nowhere for a phone browser tab to deliver that back to the
- *    app automatically (server has no configurable redirect_uri) — the user must copy that
- *    URL/token and hand it to [login] as-is, exactly like desktop's manual-paste box.
- *  - **MAL**: authorization-code + PKCE, redirecting to the *server's own*
- *    `{baseUrl}/api/tracker/mal/callback` route (not the app). Opening [Tracker.authUrl] in
- *    a Custom Tab is enough on its own — the server completes the exchange out-of-band when
- *    that redirect lands, so the client only needs to poll [getTrackers] afterward to notice
- *    `isLoggedIn` flip to true. The manual-paste path also works for MAL as a fallback
- *    (pasting the full redirected `...&code=...&state=...` URL), same [login] call.
- *
- * There is no local/on-device tracking store — like [RemoteLibraryRepository], this only
- * makes sense with a connected server, since Tsunagu holds the actual tracker account/tokens.
+ * Tracking through a Tsunagu server, which holds the tracker accounts. AniList's token comes back to the user to
+ * paste in; MAL redirects to the server, so the app polls [getTrackers] until it's signed in.
  */
 class RemoteTrackingRepository(private val client: TsunaguClient) {
 

@@ -10,13 +10,7 @@ import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
 import kotlinx.serialization.json.put
 
-/**
- * Library/folders/reading-progress against a connected Tsunagu server's own GraphQL API —
- * the remote counterpart of [dev.moku.mobile.library.LocalLibraryRepository]. There is
- * nothing to persist on-device here: the server already owns this state (its own DB), so
- * every method here is a thin GraphQL call, not a cache. See [dev.moku.mobile.backend
- * .ContentBackend]'s kdoc for why local and remote are never merged into one library.
- */
+/** The server's library over GraphQL. */
 class RemoteLibraryRepository(private val client: TsunaguClient) {
 
     // ---- library ----
