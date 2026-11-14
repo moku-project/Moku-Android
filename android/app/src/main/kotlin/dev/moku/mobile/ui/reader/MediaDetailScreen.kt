@@ -79,6 +79,7 @@ import dev.moku.mobile.library.MediaCache
 import dev.moku.mobile.library.FolderEntity
 import dev.moku.mobile.sync.ServerOrigin
 import dev.moku.mobile.sync.ServerSync
+import dev.moku.mobile.remote.ServerSession
 import dev.moku.mobile.sync.ServerDownloads
 import dev.moku.mobile.ui.library.FolderPicker
 import dev.moku.mobile.ui.library.SheetBody
@@ -196,8 +197,10 @@ fun MediaDetailScreen(
     var folders by remember { mutableStateOf(emptyList<FolderEntity>()) }
     var memberOf by remember { mutableStateOf(emptySet<Long>()) }
     val serverTitle = ServerOrigin.isServer(originId)
-    // Chapters the server itself has downloaded, separate from what's downloaded to this phone.
-    var onServer by remember { mutableStateOf(emptySet<String>()) }
+    // Download goes to the server; a copy on the phone is a separate choice, for reading while it's out of reach.
+    val serverSide = serverTitle && ServerOrigin.isCurrent(originId)
+    val serverName = ServerOrigin.parse(originId)?.instanceId?.let(ServerSession::nameOf) ?: "the server"
+    var onServer by remember { mutableStateOf(emptyMap<String, DownloadStatus>()) }
     var tracks by remember { mutableStateOf(emptyList<TrackLinkEntity>()) }
     var actionsFor by remember { mutableStateOf<BackendUnit?>(null) }
     var selected by remember { mutableStateOf(emptySet<String>()) }
@@ -215,8 +218,8 @@ fun MediaDetailScreen(
         folders = repo.getFolders()
         memberOf = repo.foldersFor(originId, mediaId)
         val serverMediaId = state.units.firstOrNull()?.mediaId
-        if (serverTitle && serverMediaId != null && ServerOrigin.isCurrent(originId)) {
-            onServer = runCatching { ServerDownloads.downloadedChapters(serverMediaId) }.getOrDefault(onServer)
+        if (serverSide && serverMediaId != null) {
+            onServer = runCatching { ServerDownloads.chapterStates(serverMediaId) }.getOrDefault(onServer)
         }
     }
 
@@ -251,9 +254,9 @@ fun MediaDetailScreen(
 
     LaunchedEffect(originId, mediaId, active) { if (active) refreshLocal() }
 
-    LaunchedEffect(downloads) {
-        if (downloads.values.any { it == DownloadStatus.QUEUED || it == DownloadStatus.DOWNLOADING }) {
-            delay(1500)
+    LaunchedEffect(downloads, onServer) {
+        if ((downloads.values + onServer.values).any { it == DownloadStatus.QUEUED || it == DownloadStatus.DOWNLOADING }) {
+            delay(if (serverSide) 3000 else 1500)
             refreshLocal()
         }
     }
@@ -272,7 +275,7 @@ fun MediaDetailScreen(
             when (filter.show) {
                 Show.ALL -> true
                 Show.UNREAD -> progress[it.id]?.completed != true
-                Show.DOWNLOADED -> downloads[it.id] == DownloadStatus.DONE
+                Show.DOWNLOADED -> downloads[it.id] == DownloadStatus.DONE || onServer[it.id] == DownloadStatus.DONE
             }
         }
         .let { list -> if (filter.dedupe) list.distinctBy { it.num() ?: it.id } else list }
@@ -298,9 +301,12 @@ fun MediaDetailScreen(
         if (folders.isNotEmpty()) folderSheet = true else MokuToast.show("Added to library")
     }
 
+    fun count(n: Int) = "$n ${word.lowercase()}${if (n == 1) "" else "s"}"
+
     fun download(units: List<BackendUnit>) = scope.launch {
         val m = media ?: return@launch
-        val todo = units.filter { downloads[it.id] != DownloadStatus.DONE }
+        val have = if (serverSide) onServer else downloads
+        val todo = units.filter { have[it.id] != DownloadStatus.DONE && have[it.id] != DownloadStatus.QUEUED && have[it.id] != DownloadStatus.DOWNLOADING }
         if (todo.isEmpty()) {
             MokuToast.show("Already downloaded")
             return@launch
@@ -309,9 +315,33 @@ fun MediaDetailScreen(
             repo.addToLibrary(m)
             state = state.copy(inLibrary = repo.isInLibrary(originId, mediaId))
         }
+        if (!serverSide) {
+            todo.forEach { queue.enqueue(originId, mediaId, it.id) }
+            downloads = downloads + todo.associate { it.id to DownloadStatus.QUEUED }
+            MokuToast.show("Queued ${count(todo.size)}")
+            return@launch
+        }
+        val serverMediaId = state.units.firstOrNull()?.mediaId ?: return@launch
+        runCatching {
+            val (failed, fresh) = todo.partition { onServer[it.id] == DownloadStatus.FAILED }
+            failed.forEach { ServerDownloads.retry(serverMediaId, it.id) }
+            if (fresh.isNotEmpty()) ServerDownloads.enqueue(serverMediaId, fresh.map { it.id })
+        }.onSuccess {
+            onServer = onServer + todo.associate { it.id to DownloadStatus.QUEUED }
+            MokuToast.show("Queued ${count(todo.size)} on $serverName")
+        }.onFailure { MokuToast.show(it.message ?: "$serverName didn't take that") }
+    }
+
+    /** Copies chapters the server already has, so they read while it's out of reach. */
+    fun keepOnPhone(units: List<BackendUnit>) = scope.launch {
+        val todo = units.filter { onServer[it.id] == DownloadStatus.DONE && downloads[it.id] != DownloadStatus.DONE }
+        if (todo.isEmpty()) {
+            MokuToast.show(if (units.any { onServer[it.id] != DownloadStatus.DONE }) "Download it on $serverName first" else "Already on this phone")
+            return@launch
+        }
         todo.forEach { queue.enqueue(originId, mediaId, it.id) }
         downloads = downloads + todo.associate { it.id to DownloadStatus.QUEUED }
-        MokuToast.show("Queued ${todo.size} ${word.lowercase()}${if (todo.size == 1) "" else "s"}")
+        MokuToast.show("Copying ${count(todo.size)} to this phone")
     }
 
     fun deleteDownloads(units: List<BackendUnit>) = scope.launch {
@@ -328,16 +358,17 @@ fun MediaDetailScreen(
         if (read && tracks.isNotEmpty()) tracks = trackSync.push(originId, mediaId, state.units)
     }
 
-    fun onServerAction(units: List<BackendUnit>, remove: Boolean) = scope.launch {
+    fun removeFromServer(units: List<BackendUnit>) = scope.launch {
         val serverMediaId = state.units.firstOrNull()?.mediaId ?: return@launch
-        val ids = units.map { it.id }
-        runCatching { if (remove) ServerDownloads.delete(serverMediaId, ids) else ServerDownloads.enqueue(serverMediaId, ids) }
+        val ids = units.filter { onServer[it.id] != null }.map { it.id }
+        if (ids.isEmpty()) return@launch
+        runCatching { ServerDownloads.delete(serverMediaId, ids) }
             .onSuccess {
-                val n = "${ids.size} ${word.lowercase()}${if (ids.size == 1) "" else "s"}"
-                MokuToast.show(if (remove) "Removed $n from the server" else "Queued $n on the server")
+                onServer = onServer - ids.toSet()
+                MokuToast.show("Removed ${count(ids.size)} from $serverName")
                 refreshLocal()
             }
-            .onFailure { MokuToast.show(it.message ?: "The server didn't take that") }
+            .onFailure { MokuToast.show(it.message ?: "$serverName didn't take that") }
     }
 
     fun from(unit: BackendUnit): List<BackendUnit> = inGroups.dropWhile { it.id != unit.id }
@@ -476,8 +507,8 @@ fun MediaDetailScreen(
                         unit = unit,
                         word = word,
                         progress = progress[unit.id],
-                        download = downloads[unit.id],
-                        onServer = unit.id in onServer,
+                        download = if (serverSide) onServer[unit.id] else downloads[unit.id],
+                        onPhone = serverTitle && downloads[unit.id] == DownloadStatus.DONE,
                         selecting = selected.isNotEmpty(),
                         selected = unit.id in selected,
                         onClick = {
@@ -488,7 +519,7 @@ fun MediaDetailScreen(
                             if (selected.isNotEmpty()) selected = selected + unit.id else actionsFor = unit
                         },
                         onDownloadTap = {
-                            when (downloads[unit.id]) {
+                            when (if (serverSide) onServer[unit.id] else downloads[unit.id]) {
                                 null, DownloadStatus.FAILED -> download(listOf(unit))
                                 else -> actionsFor = unit
                             }
@@ -510,7 +541,8 @@ fun MediaDetailScreen(
                     onRead = { mark(picked, true); selected = emptySet() },
                     onUnread = { mark(picked, false); selected = emptySet() },
                     onDownload = { download(picked); selected = emptySet() },
-                    onDelete = { deleteDownloads(picked); selected = emptySet() },
+                    onKeep = if (serverSide) ({ keepOnPhone(picked); selected = emptySet() }) else null,
+                    onDelete = { if (serverSide) removeFromServer(picked) else deleteDownloads(picked); selected = emptySet() },
                     onClose = { selected = emptySet() },
                 )
             }
@@ -533,43 +565,45 @@ fun MediaDetailScreen(
                         actionsFor = null; mark(inGroups.takeWhile { it.id != unit.id }, true)
                     }
                 }
-                SettingsGroup {
-                    when (dl) {
-                        DownloadStatus.DONE -> SettingsRow("Delete download", icon = R.drawable.ph_trash_light, danger = true) {
-                            actionsFor = null; deleteDownloads(listOf(unit))
+                val have = if (serverSide) onServer else downloads
+                val status = have[unit.id]
+                if (!serverTitle || serverSide) {
+                    SettingsGroup(if (serverSide) "On $serverName" else null) {
+                        when (status) {
+                            DownloadStatus.DONE -> SettingsRow(if (serverSide) "Remove from $serverName" else "Delete download", icon = R.drawable.ph_trash_light, danger = true) {
+                                actionsFor = null; if (serverSide) removeFromServer(listOf(unit)) else deleteDownloads(listOf(unit))
+                            }
+                            DownloadStatus.QUEUED, DownloadStatus.DOWNLOADING -> SettingsRow("Cancel download", icon = R.drawable.ph_x_light) {
+                                actionsFor = null; if (serverSide) removeFromServer(listOf(unit)) else deleteDownloads(listOf(unit))
+                            }
+                            else -> SettingsRow(if (status == DownloadStatus.FAILED) "Retry download" else "Download", icon = R.drawable.ph_download_simple_light) {
+                                actionsFor = null; download(listOf(unit))
+                            }
                         }
-                        DownloadStatus.QUEUED, DownloadStatus.DOWNLOADING -> SettingsRow("Cancel download", icon = R.drawable.ph_x_light) {
-                            actionsFor = null; deleteDownloads(listOf(unit))
+                        GroupDivider()
+                        SettingsRow("Download next 5 from here", icon = R.drawable.ph_download_simple_light) {
+                            actionsFor = null; download(from(unit).filter { have[it.id] == null }.take(5))
                         }
-                        else -> SettingsRow(
-                            when {
-                                dl == DownloadStatus.FAILED -> "Retry download"
-                                serverTitle -> "Download to phone"
-                                else -> "Download"
-                            },
-                            icon = R.drawable.ph_download_simple_light,
-                        ) {
-                            actionsFor = null; download(listOf(unit))
+                        GroupDivider()
+                        SettingsRow("Download all from here", icon = R.drawable.ph_download_simple_light) {
+                            actionsFor = null; download(from(unit).filter { have[it.id] == null })
                         }
-                    }
-                    GroupDivider()
-                    SettingsRow("Download next 5 from here", icon = R.drawable.ph_download_simple_light) {
-                        actionsFor = null; download(from(unit).filter { downloads[it.id] == null }.take(5))
-                    }
-                    GroupDivider()
-                    SettingsRow("Download all from here", icon = R.drawable.ph_download_simple_light) {
-                        actionsFor = null; download(from(unit).filter { downloads[it.id] == null })
                     }
                 }
-                if (serverTitle && ServerOrigin.isCurrent(originId)) {
-                    SettingsGroup("On the server") {
-                        if (unit.id in onServer) {
-                            SettingsRow("Remove from the server", icon = R.drawable.ph_trash_light, danger = true) {
-                                actionsFor = null; onServerAction(listOf(unit), remove = true)
+                if (serverTitle && (serverSide || dl != null)) {
+                    SettingsGroup(
+                        "This phone",
+                        footer = if (serverSide && dl == null && status != DownloadStatus.DONE) "Download it on $serverName first, then keep a copy here to read while it's out of reach." else null,
+                    ) {
+                        when (dl) {
+                            DownloadStatus.DONE -> SettingsRow("Remove from this phone", icon = R.drawable.ph_trash_light, danger = true) {
+                                actionsFor = null; deleteDownloads(listOf(unit))
                             }
-                        } else {
-                            SettingsRow("Download on the server", icon = R.drawable.ph_hard_drives_light) {
-                                actionsFor = null; onServerAction(listOf(unit), remove = false)
+                            DownloadStatus.QUEUED, DownloadStatus.DOWNLOADING -> SettingsRow("Cancel copy", icon = R.drawable.ph_x_light) {
+                                actionsFor = null; deleteDownloads(listOf(unit))
+                            }
+                            else -> SettingsRow(if (dl == DownloadStatus.FAILED) "Retry copy" else "Keep on this phone", icon = R.drawable.ph_device_mobile_light) {
+                                actionsFor = null; keepOnPhone(listOf(unit))
                             }
                         }
                     }
@@ -582,26 +616,49 @@ fun MediaDetailScreen(
     }
 
     if (downloadSheet) {
-        val unread = inGroups.filter { progress[it.id]?.completed != true && downloads[it.id] == null }
-        val missing = inGroups.filter { downloads[it.id] == null }
-        val done = ordered.filter { downloads[it.id] == DownloadStatus.DONE }
+        val have = if (serverSide) onServer else downloads
+        val unread = inGroups.filter { progress[it.id]?.completed != true && have[it.id] == null }
+        val missing = inGroups.filter { have[it.id] == null }
+        val done = ordered.filter { have[it.id] == DownloadStatus.DONE }
         val readDone = done.filter { progress[it.id]?.completed == true }
+        val onPhone = ordered.filter { serverTitle && downloads[it.id] == DownloadStatus.DONE }
+        val keepable = ordered.filter { onServer[it.id] == DownloadStatus.DONE && downloads[it.id] == null }
+        val plural = "${word.lowercase()}s"
         ModalBottomSheet(onDismissRequest = { downloadSheet = false }, sheetState = sheetState, containerColor = colors.bgSurface) {
             SheetColumn("Downloads") {
-                SettingsGroup("Download") {
-                    SettingsRow("Next 5 unread", icon = R.drawable.ph_download_simple_light, value = "${minOf(5, unread.size)}") { downloadSheet = false; download(unread.take(5)) }
-                    GroupDivider()
-                    SettingsRow("Next 10 unread", icon = R.drawable.ph_download_simple_light, value = "${minOf(10, unread.size)}") { downloadSheet = false; download(unread.take(10)) }
-                    GroupDivider()
-                    SettingsRow("All unread", icon = R.drawable.ph_download_simple_light, value = "${unread.size}") { downloadSheet = false; download(unread) }
-                    GroupDivider()
-                    SettingsRow("Everything", icon = R.drawable.ph_download_simple_light, value = "${missing.size}") { downloadSheet = false; download(missing) }
+                if (!serverTitle || serverSide) {
+                    SettingsGroup(if (serverSide) "Download on $serverName" else "Download") {
+                        SettingsRow("Next 5 unread", icon = R.drawable.ph_download_simple_light, value = "${minOf(5, unread.size)}") { downloadSheet = false; download(unread.take(5)) }
+                        GroupDivider()
+                        SettingsRow("Next 10 unread", icon = R.drawable.ph_download_simple_light, value = "${minOf(10, unread.size)}") { downloadSheet = false; download(unread.take(10)) }
+                        GroupDivider()
+                        SettingsRow("All unread", icon = R.drawable.ph_download_simple_light, value = "${unread.size}") { downloadSheet = false; download(unread) }
+                        GroupDivider()
+                        SettingsRow("Everything", icon = R.drawable.ph_download_simple_light, value = "${missing.size}") { downloadSheet = false; download(missing) }
+                    }
+                }
+                if (keepable.isNotEmpty()) {
+                    SettingsGroup("Keep on this phone", footer = "Copies what $serverName has downloaded, to read while it's out of reach.") {
+                        val keepUnread = keepable.filter { progress[it.id]?.completed != true }
+                        SettingsRow("Unread", icon = R.drawable.ph_device_mobile_light, value = "${keepUnread.size}") { downloadSheet = false; keepOnPhone(keepUnread) }
+                        GroupDivider()
+                        SettingsRow("Everything downloaded", icon = R.drawable.ph_device_mobile_light, value = "${keepable.size}") { downloadSheet = false; keepOnPhone(keepable) }
+                    }
                 }
                 if (done.isNotEmpty()) {
-                    SettingsGroup("Delete") {
-                        SettingsRow("Delete read downloads", icon = R.drawable.ph_trash_light, value = "${readDone.size}") { downloadSheet = false; deleteDownloads(readDone) }
+                    SettingsGroup(if (serverSide) "Remove from $serverName" else "Delete") {
+                        val remove: (List<BackendUnit>) -> Unit = { if (serverSide) removeFromServer(it) else deleteDownloads(it) }
+                        SettingsRow("Read $plural", icon = R.drawable.ph_trash_light, value = "${readDone.size}") { downloadSheet = false; remove(readDone) }
                         GroupDivider()
-                        SettingsRow("Delete all downloads", icon = R.drawable.ph_trash_light, value = "${done.size}", danger = true) { downloadSheet = false; deleteDownloads(done) }
+                        SettingsRow("All $plural", icon = R.drawable.ph_trash_light, value = "${done.size}", danger = true) { downloadSheet = false; remove(done) }
+                    }
+                }
+                if (onPhone.isNotEmpty()) {
+                    SettingsGroup("Remove from this phone") {
+                        val phoneRead = onPhone.filter { progress[it.id]?.completed == true }
+                        SettingsRow("Read $plural", icon = R.drawable.ph_trash_light, value = "${phoneRead.size}") { downloadSheet = false; deleteDownloads(phoneRead) }
+                        GroupDivider()
+                        SettingsRow("All $plural", icon = R.drawable.ph_trash_light, value = "${onPhone.size}", danger = true) { downloadSheet = false; deleteDownloads(onPhone) }
                     }
                 }
             }
@@ -859,7 +916,7 @@ private fun UnitRow(
     word: String,
     progress: ReadingProgressEntity?,
     download: DownloadStatus?,
-    onServer: Boolean,
+    onPhone: Boolean,
     selecting: Boolean,
     selected: Boolean,
     onClick: () -> Unit,
@@ -921,7 +978,7 @@ private fun UnitRow(
                 read -> Icon(painterResource(R.drawable.ph_check_bold), contentDescription = "Read", tint = colors.textFaint, modifier = Modifier.size(12.dp))
                 progress != null && progress.progress > 0f -> Text("${(progress.progress * 100).toInt()}%", style = MokuText.label, color = colors.accentFg)
             }
-            if (onServer) Icon(painterResource(R.drawable.ph_hard_drives_light), contentDescription = "On the server", tint = colors.textFaint, modifier = Modifier.size(14.dp))
+            if (onPhone) Icon(painterResource(R.drawable.ph_device_mobile_light), contentDescription = "Kept on this phone", tint = colors.textFaint, modifier = Modifier.size(14.dp))
             if (!selecting) DownloadIndicator(download, onDownloadTap)
         }
         Box(Modifier.fillMaxWidth().padding(start = MokuSpacing.Sp4).height(1.dp).background(colors.borderDim))
@@ -963,6 +1020,7 @@ private fun SelectionBar(
     onRead: () -> Unit,
     onUnread: () -> Unit,
     onDownload: () -> Unit,
+    onKeep: (() -> Unit)?,
     onDelete: () -> Unit,
     onClose: () -> Unit,
 ) {
@@ -985,6 +1043,7 @@ private fun SelectionBar(
         SmallIcon(R.drawable.ph_eye_light, "Mark read", onClick = onRead)
         SmallIcon(R.drawable.ph_eye_slash_light, "Mark unread", onClick = onUnread)
         SmallIcon(R.drawable.ph_download_simple_light, "Download", onClick = onDownload)
+        if (onKeep != null) SmallIcon(R.drawable.ph_device_mobile_light, "Keep on this phone", onClick = onKeep)
         SmallIcon(R.drawable.ph_trash_light, "Delete downloads", onClick = onDelete)
     }
 }

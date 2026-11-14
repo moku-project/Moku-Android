@@ -1,6 +1,7 @@
 package dev.moku.mobile.sync
 
 import dev.moku.mobile.backend.MediaContentType
+import dev.moku.mobile.library.DownloadStatus
 import dev.moku.mobile.remote.ServerSession
 import dev.moku.mobile.remote.str
 import dev.moku.mobile.remote.strOrNull
@@ -82,6 +83,15 @@ object ServerDownloads {
     suspend fun downloader(): ServerDownloader {
         val o = client.query("query Downloader { downloaderStatus { isRunning queuedCount downloadingCount failedCount } }")["downloaderStatus"]!!.jsonObject
         return ServerDownloader(o.bool("isRunning"), o.int("queuedCount"), o.int("downloadingCount"), o.int("failedCount"))
+    }
+
+    /** Where each of [mediaId]'s chapters stands on the server: downloaded, queued, downloading or failed. */
+    suspend fun chapterStates(mediaId: String): Map<String, DownloadStatus> {
+        val queued = client.query("query Queue { downloadQueue { mediaId chapterId status } }")["downloadQueue"]!!.jsonArray
+            .map { it.jsonObject }
+            .filter { it.str("mediaId") == mediaId }
+            .associate { it.str("chapterId") to DownloadStatus.valueOf(it.str("status")) }
+        return queued + downloadedChapters(mediaId).associateWith { DownloadStatus.DONE }
     }
 
     /** Ids of the chapters of [mediaId] the server has downloaded. */
