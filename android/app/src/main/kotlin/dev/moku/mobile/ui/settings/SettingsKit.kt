@@ -25,6 +25,7 @@ import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyListScope
+import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.material3.Icon
@@ -34,10 +35,16 @@ import androidx.compose.runtime.getValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.drawWithContent
+import androidx.compose.ui.geometry.Rect
+import androidx.compose.ui.graphics.Path
+import androidx.compose.ui.graphics.drawscope.DrawScope
+import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.ui.text.input.KeyboardType
@@ -60,6 +67,7 @@ fun SettingsPage(
     title: String,
     onBack: (() -> Unit)? = null,
     trailing: (@Composable () -> Unit)? = null,
+    spacing: Dp = MokuSpacing.Sp5,
     content: LazyListScope.() -> Unit,
 ) {
     Column(Modifier.fillMaxSize().statusBarsPadding()) {
@@ -68,10 +76,75 @@ fun SettingsPage(
             modifier = Modifier.fillMaxSize(),
             state = rememberReselectListState(),
             contentPadding = PaddingValues(start = MokuSpacing.Sp4, end = MokuSpacing.Sp4, top = MokuSpacing.Sp1, bottom = MokuSpacing.Sp6),
-            verticalArrangement = Arrangement.spacedBy(MokuSpacing.Sp5),
+            verticalArrangement = Arrangement.spacedBy(spacing),
             content = content,
         )
     }
+}
+
+// A [SettingsGroup] for long lists: each row is its own lazy item, drawn together as one card.
+// Use it in a [SettingsPage] with `spacing = 0.dp`, or the item spacing opens gaps between rows.
+fun <T> LazyListScope.settingsGroupItems(
+    items: List<T>,
+    key: ((T) -> Any)? = null,
+    footer: String? = null,
+    row: @Composable (T) -> Unit,
+) {
+    itemsIndexed(items, key = key?.let { k -> { _: Int, item: T -> k(item) } }) { i, item ->
+        GroupSegment(first = i == 0, last = i == items.lastIndex) {
+            if (i > 0) GroupDivider()
+            row(item)
+        }
+    }
+    if (footer != null && items.isNotEmpty()) item {
+        Text(footer, style = MokuText.meta, color = MokuTheme.colors.textFaint, modifier = Modifier.padding(start = 2.dp, end = 2.dp, top = MokuSpacing.Sp2))
+    }
+}
+
+@Composable
+private fun GroupSegment(first: Boolean, last: Boolean, content: @Composable ColumnScope.() -> Unit) {
+    val colors = MokuTheme.colors
+    val radius = MokuRadius.Xl
+    val top = if (first) radius else 0.dp
+    val bottom = if (last) radius else 0.dp
+    val shape = RoundedCornerShape(topStart = top, topEnd = top, bottomStart = bottom, bottomEnd = bottom)
+    Column(
+        Modifier
+            .fillMaxWidth()
+            .clip(shape)
+            .background(colors.bgSurface)
+            .drawWithContent {
+                drawContent()
+                drawSegmentBorder(first, last, radius.toPx(), 1.dp.toPx(), colors.borderDim)
+            },
+        content = content,
+    )
+}
+
+/** Outline of one slice of a card: sides always, top/bottom edges only on the ends. */
+private fun DrawScope.drawSegmentBorder(first: Boolean, last: Boolean, radius: Float, stroke: Float, color: Color) {
+    val s = stroke / 2
+    val r = (radius - s).coerceAtLeast(0f)
+    val w = size.width
+    val h = size.height
+    val path = Path().apply {
+        moveTo(s, if (last) h - s - r else h)
+        lineTo(s, if (first) s + r else 0f)
+        if (first) {
+            arcTo(Rect(s, s, s + 2 * r, s + 2 * r), 180f, 90f, false)
+            lineTo(w - s - r, s)
+            arcTo(Rect(w - s - 2 * r, s, w - s, s + 2 * r), 270f, 90f, false)
+        } else {
+            moveTo(w - s, 0f)
+        }
+        lineTo(w - s, if (last) h - s - r else h)
+        if (last) {
+            arcTo(Rect(w - s - 2 * r, h - s - 2 * r, w - s, h - s), 0f, 90f, false)
+            lineTo(s + r, h - s)
+            arcTo(Rect(s, h - s - 2 * r, s + 2 * r, h - s), 90f, 90f, false)
+        }
+    }
+    drawPath(path, color, style = Stroke(width = stroke))
 }
 
 @Composable

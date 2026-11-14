@@ -7,6 +7,7 @@ import eu.kanade.tachiyomi.animesource.model.SAnime
 import eu.kanade.tachiyomi.animesource.model.SEpisode
 import eu.kanade.tachiyomi.animesource.model.Video
 import eu.kanade.tachiyomi.animesource.online.AnimeHttpSource
+import dev.moku.mobile.core.AnimeVideoLoader
 
 /** An anime extension running on the phone. An episode plays the source's preferred video, else its first. */
 class LocalAnimeBackend(
@@ -20,8 +21,6 @@ class LocalAnimeBackend(
 
     val capabilities = ContentBackendCapabilities(supportsOffline = true)
 
-    private val animeCache = LinkedHashMap<String, SAnime>()
-    private val episodeCache = LinkedHashMap<String, SEpisode>()
 
     override suspend fun popularMedia(page: Int): BackendPage<BackendMedia> {
         val result = source.getPopularAnime(page)
@@ -42,34 +41,38 @@ class LocalAnimeBackend(
     override suspend fun filterOptions(): List<BackendFilter> = source.getFilterList().list.map { it.toBackendFilter() }
 
     override suspend fun mediaDetails(mediaId: String): BackendMedia {
-        val anime = animeCache[mediaId] ?: SAnime.create().apply { url = mediaId }
-        return source.getAnimeDetails(anime).cacheAndConvert()
+        val anime = SourceEntries.get<SAnime>(originId, "media", mediaId) ?: SAnime.create().apply { url = mediaId }
+        return anime.mergeDetails(source.getAnimeDetails(anime)).cacheAndConvert()
     }
 
     override suspend fun unitList(mediaId: String): List<BackendUnit> {
-        val anime = animeCache[mediaId] ?: SAnime.create().apply { url = mediaId }
+        val anime = SourceEntries.get<SAnime>(originId, "media", mediaId) ?: SAnime.create().apply { url = mediaId }
         return source.getEpisodeList(anime).map { it.cacheAndConvert(mediaId) }
     }
 
     @Suppress("DEPRECATION")
     override suspend fun unitContent(mediaId: String, unitId: String): BackendUnitContent {
-        val episode = episodeCache[unitId] ?: SEpisode.create().apply { url = unitId }
+        val episode = SourceEntries.get<SEpisode>(originId, "unit", unitId) ?: SEpisode.create().apply { url = unitId }
         val http = source as? AnimeHttpSource
-        val videos = source.getVideoList(episode).mapNotNull { v ->
-            runCatching {
-                if (v.videoUrl.isBlank() && http != null) v.videoUrl = http.getVideoUrl(v)
-                v.takeIf { it.videoUrl.isNotBlank() }
-            }.getOrNull()
+        val videos = if (http != null) {
+            AnimeVideoLoader.loadVideos(http, episode)
+        } else {
+            source.getVideoList(episode).filter { it.videoUrl.isNotBlank() && it.videoUrl != "null" }
         }
         val video = videos.firstOrNull { it.preferred } ?: videos.firstOrNull()
             ?: return BackendUnitContent.Video(streamUrl = "")
         fun Video.headerMap() = (headers ?: http?.headers)?.toMap().orEmpty()
+        // Every source's subtitles are offered, each with its video's headers since subtitle hosts check the same Referer.
+        val subtitles = (listOf(video) + videos).flatMap { v -> v.subtitleTracks.map { SubtitleTrack(it.lang, it.url, v.headerMap()) } }
+            .filter { it.url.isNotBlank() }
+            .distinctBy { it.url }
         return BackendUnitContent.Video(
             streamUrl = video.videoUrl,
             headers = video.headerMap(),
-            subtitleUrl = video.subtitleTracks.firstOrNull()?.url,
             qualities = videos.map { VideoVariant(label = it.videoTitle, url = it.videoUrl, headers = it.headerMap()) },
-            subtitles = video.subtitleTracks.map { SubtitleTrack(label = it.lang, url = it.url) },
+            subtitles = subtitles,
+            skipMarkers = video.timestamps.map { SkipMarker(it.name.ifBlank { it.type.name }, (it.start * 1000).toLong(), (it.end * 1000).toLong()) },
+            sourceClient = http?.client,
         )
     }
 
@@ -77,12 +80,12 @@ class LocalAnimeBackend(
 
     private fun SAnime.cacheAndConvert(): BackendMedia {
         (source as? AnimeHttpSource)?.let { CoverHeaders.remember(thumbnail_url, it.headers.names().associateWith { n -> it.headers[n].orEmpty() }) }
-        animeCache[url] = this
+        SourceEntries.put(originId, "media", url, this)
         return BackendMedia(
             id = url,
             originId = originId,
             contentType = MediaContentType.ANIME,
-            title = title,
+            title = unsetAsNull { title }.orEmpty(),
             thumbnailUrl = thumbnail_url,
             description = description,
             status = status.toStatusString(),
@@ -94,7 +97,7 @@ class LocalAnimeBackend(
     }
 
     private fun SEpisode.cacheAndConvert(mediaId: String): BackendUnit {
-        episodeCache[url] = this
+        SourceEntries.put(originId, "unit", url, this)
         return BackendUnit(
             id = url,
             mediaId = mediaId,

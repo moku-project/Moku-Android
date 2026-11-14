@@ -9,6 +9,7 @@ import androidx.work.OneTimeWorkRequestBuilder
 import androidx.work.WorkManager
 import androidx.work.WorkerParameters
 import androidx.work.workDataOf
+import dev.moku.mobile.backend.MediaContentType
 import dev.moku.mobile.backend.LocalBackendFactory
 import dev.moku.mobile.core.NotificationPermission
 import dev.moku.mobile.sync.ServerDownloadFailed
@@ -43,7 +44,7 @@ class DownloadWorker(context: Context, params: WorkerParameters) : CoroutineWork
             val media = cached?.media ?: backend.mediaDetails(mediaId)
             val unit = cached?.units?.firstOrNull { it.id == unitId }
                 ?: backend.unitList(mediaId).firstOrNull { it.id == unitId }
-                ?: return fail("This chapter is no longer listed")
+                ?: return fail(if (media.contentType == MediaContentType.ANIME) "This episode is no longer listed" else "This chapter is no longer listed")
 
             // A server title is downloaded on the server first; the phone then copies the finished files.
             if (ServerOrigin.isServer(originId) && !ServerDownloads.ensureOnServer(unit.mediaId, unit.id, SERVER_WAIT_MS)) {

@@ -9,6 +9,9 @@ import dev.moku.mobile.backend.BackendUnitContent
 import dev.moku.mobile.backend.ContentBackend
 import dev.moku.mobile.backend.ContentBackendCapabilities
 import dev.moku.mobile.backend.MediaContentType
+import dev.moku.mobile.backend.SkipMarker
+import dev.moku.mobile.backend.SubtitleTrack
+import dev.moku.mobile.backend.VideoVariant
 import dev.moku.mobile.sync.ServerOrigin
 import kotlinx.serialization.json.JsonArray
 import kotlinx.serialization.json.JsonObject
@@ -125,19 +128,38 @@ class RemoteTsunaguBackend(
     override suspend fun unitContent(mediaId: String, unitId: String): BackendUnitContent {
         val server = ServerSession.current ?: throw AuthRequiredException()
         // `pages` asks the server's source for the page list (or its download), the same field Moku reads.
-        val wantPages = contentType == MediaContentType.MANGA
+        val extra = when (contentType) {
+            MediaContentType.MANGA -> " pages"
+            MediaContentType.ANIME -> " videoStream { sources { label url preferred } subtitles { lang url } skipMarkers { name type startMs endMs } }"
+            MediaContentType.NOVEL -> ""
+        }
         val chapter = client.query(
-            "query Chapter(\$id: ID!) { chapter(id: \$id) { mediaId${if (wantPages) " pages" else ""} } }",
+            "query Chapter(\$id: ID!) { chapter(id: \$id) { mediaId$extra } }",
             buildJsonObject { put("id", unitId) },
         )["chapter"]?.takeIf { it !is kotlinx.serialization.json.JsonNull }?.jsonObject
-            ?: throw java.io.IOException("The server no longer has this chapter")
+            ?: throw java.io.IOException("The server no longer has this ${if (contentType == MediaContentType.ANIME) "episode" else "chapter"}")
         val contentBase = "${server.baseUrl}/content/${chapter.str("mediaId")}/$unitId"
 
         return when (contentType) {
-            MediaContentType.ANIME -> BackendUnitContent.Video(
-                streamUrl = "$contentBase/video",
-                headers = server.token?.let { mapOf("Authorization" to "Bearer $it") }.orEmpty(),
-            )
+            MediaContentType.ANIME -> {
+                val auth = server.token?.let { mapOf("Authorization" to "Bearer $it") }.orEmpty()
+                val stream = chapter["videoStream"]?.takeIf { it !is kotlinx.serialization.json.JsonNull }?.jsonObject
+                fun list(key: String) = stream?.get(key)?.jsonArray.orEmpty().map { it.jsonObject }
+                val preferred = list("sources").firstOrNull { it.strOrNull("preferred") == "true" }?.strOrNull("url")
+                BackendUnitContent.Video(
+                    streamUrl = ServerSession.absolute(preferred) ?: "$contentBase/video",
+                    headers = auth,
+                    qualities = list("sources").mapNotNull { s ->
+                        ServerSession.absolute(s.strOrNull("url"))?.let { VideoVariant(s.str("label"), it, auth) }
+                    },
+                    subtitles = list("subtitles").mapNotNull { s ->
+                        ServerSession.absolute(s.strOrNull("url"))?.let { SubtitleTrack(s.strOrNull("lang").orEmpty(), it, auth) }
+                    },
+                    skipMarkers = list("skipMarkers").map { m ->
+                        SkipMarker(m.strOrNull("name")?.ifBlank { null } ?: m.str("type"), m.str("startMs").toLong(), m.str("endMs").toLong())
+                    },
+                )
+            }
             MediaContentType.NOVEL -> BackendUnitContent.Text(html = client.rawGetText("$contentBase/text"))
             MediaContentType.MANGA -> BackendUnitContent.Pages(
                 chapter["pages"]?.takeIf { it !is kotlinx.serialization.json.JsonNull }?.jsonArray.orEmpty()

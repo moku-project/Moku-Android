@@ -264,7 +264,12 @@ fun MediaDetailScreen(
     BackHandler(enabled = selected.isNotEmpty()) { selected = emptySet() }
 
     val media = state.media
-    val word = if (media?.contentType == MediaContentType.ANIME) "Episode" else "Chapter"
+    val anime = media?.contentType == MediaContentType.ANIME
+    val word = if (anime) "Episode" else "Chapter"
+    // Episodes are watched, chapters read.
+    val doneWord = if (anime) "watched" else "read"
+    val notDoneWord = "un$doneWord"
+    val consume = if (anime) "watch" else "read"
     val ordered = remember(state.units) {
         state.units.withIndex().sortedWith(compareBy({ it.value.num() ?: Float.MAX_VALUE }, { -it.index })).map { it.value }
     }
@@ -416,8 +421,8 @@ fun MediaDetailScreen(
                     ) {
                         val label = when {
                             ordered.isEmpty() -> "No ${word.lowercase()}s yet"
-                            !started -> "Start reading"
-                            next == null -> "Read again"
+                            !started -> "Start ${consume}ing"
+                            next == null -> "${consume.replaceFirstChar { it.uppercase() }} again"
                             else -> "Continue · " + (next.num()?.let { "$word ${formatNumber(it)}" } ?: next.label(word))
                         }
                         PrimaryButton(label, Modifier.weight(1f), enabled = ordered.isNotEmpty()) {
@@ -538,6 +543,7 @@ fun MediaDetailScreen(
                     count = selected.size,
                     modifier = Modifier.align(Alignment.BottomCenter),
                     onSelectAll = { selected = shown.map { it.id }.toSet() },
+                    doneWord = doneWord,
                     onRead = { mark(picked, true); selected = emptySet() },
                     onUnread = { mark(picked, false); selected = emptySet() },
                     onDownload = { download(picked); selected = emptySet() },
@@ -557,11 +563,11 @@ fun MediaDetailScreen(
         ModalBottomSheet(onDismissRequest = { actionsFor = null }, sheetState = sheetState, containerColor = colors.bgSurface) {
             SheetColumn(unit.label(word)) {
                 SettingsGroup {
-                    SettingsRow(if (read) "Mark as unread" else "Mark as read", icon = if (read) R.drawable.ph_eye_slash_light else R.drawable.ph_eye_light) {
+                    SettingsRow(if (read) "Mark as $notDoneWord" else "Mark as $doneWord", icon = if (read) R.drawable.ph_eye_slash_light else R.drawable.ph_eye_light) {
                         actionsFor = null; mark(listOf(unit), !read)
                     }
                     GroupDivider()
-                    SettingsRow("Mark previous as read", icon = R.drawable.ph_checks_light) {
+                    SettingsRow("Mark previous as $doneWord", icon = R.drawable.ph_checks_light) {
                         actionsFor = null; mark(inGroups.takeWhile { it.id != unit.id }, true)
                     }
                 }
@@ -593,7 +599,7 @@ fun MediaDetailScreen(
                 if (serverTitle && (serverSide || dl != null)) {
                     SettingsGroup(
                         "This phone",
-                        footer = if (serverSide && dl == null && status != DownloadStatus.DONE) "Download it on $serverName first, then keep a copy here to read while it's out of reach." else null,
+                        footer = if (serverSide && dl == null && status != DownloadStatus.DONE) "Download it on $serverName first, then keep a copy here to $consume while it's out of reach." else null,
                     ) {
                         when (dl) {
                             DownloadStatus.DONE -> SettingsRow("Remove from this phone", icon = R.drawable.ph_trash_light, danger = true) {
@@ -628,19 +634,19 @@ fun MediaDetailScreen(
             SheetColumn("Downloads") {
                 if (!serverTitle || serverSide) {
                     SettingsGroup(if (serverSide) "Download on $serverName" else "Download") {
-                        SettingsRow("Next 5 unread", icon = R.drawable.ph_download_simple_light, value = "${minOf(5, unread.size)}") { downloadSheet = false; download(unread.take(5)) }
+                        SettingsRow("Next 5 $notDoneWord", icon = R.drawable.ph_download_simple_light, value = "${minOf(5, unread.size)}") { downloadSheet = false; download(unread.take(5)) }
                         GroupDivider()
-                        SettingsRow("Next 10 unread", icon = R.drawable.ph_download_simple_light, value = "${minOf(10, unread.size)}") { downloadSheet = false; download(unread.take(10)) }
+                        SettingsRow("Next 10 $notDoneWord", icon = R.drawable.ph_download_simple_light, value = "${minOf(10, unread.size)}") { downloadSheet = false; download(unread.take(10)) }
                         GroupDivider()
-                        SettingsRow("All unread", icon = R.drawable.ph_download_simple_light, value = "${unread.size}") { downloadSheet = false; download(unread) }
+                        SettingsRow("All $notDoneWord", icon = R.drawable.ph_download_simple_light, value = "${unread.size}") { downloadSheet = false; download(unread) }
                         GroupDivider()
                         SettingsRow("Everything", icon = R.drawable.ph_download_simple_light, value = "${missing.size}") { downloadSheet = false; download(missing) }
                     }
                 }
                 if (keepable.isNotEmpty()) {
-                    SettingsGroup("Keep on this phone", footer = "Copies what $serverName has downloaded, to read while it's out of reach.") {
+                    SettingsGroup("Keep on this phone", footer = "Copies what $serverName has downloaded, to $consume while it's out of reach.") {
                         val keepUnread = keepable.filter { progress[it.id]?.completed != true }
-                        SettingsRow("Unread", icon = R.drawable.ph_device_mobile_light, value = "${keepUnread.size}") { downloadSheet = false; keepOnPhone(keepUnread) }
+                        SettingsRow(notDoneWord.replaceFirstChar { it.uppercase() }, icon = R.drawable.ph_device_mobile_light, value = "${keepUnread.size}") { downloadSheet = false; keepOnPhone(keepUnread) }
                         GroupDivider()
                         SettingsRow("Everything downloaded", icon = R.drawable.ph_device_mobile_light, value = "${keepable.size}") { downloadSheet = false; keepOnPhone(keepable) }
                     }
@@ -648,7 +654,7 @@ fun MediaDetailScreen(
                 if (done.isNotEmpty()) {
                     SettingsGroup(if (serverSide) "Remove from $serverName" else "Delete") {
                         val remove: (List<BackendUnit>) -> Unit = { if (serverSide) removeFromServer(it) else deleteDownloads(it) }
-                        SettingsRow("Read $plural", icon = R.drawable.ph_trash_light, value = "${readDone.size}") { downloadSheet = false; remove(readDone) }
+                        SettingsRow("${doneWord.replaceFirstChar { it.uppercase() }} $plural", icon = R.drawable.ph_trash_light, value = "${readDone.size}") { downloadSheet = false; remove(readDone) }
                         GroupDivider()
                         SettingsRow("All $plural", icon = R.drawable.ph_trash_light, value = "${done.size}", danger = true) { downloadSheet = false; remove(done) }
                     }
@@ -656,7 +662,7 @@ fun MediaDetailScreen(
                 if (onPhone.isNotEmpty()) {
                     SettingsGroup("Remove from this phone") {
                         val phoneRead = onPhone.filter { progress[it.id]?.completed == true }
-                        SettingsRow("Read $plural", icon = R.drawable.ph_trash_light, value = "${phoneRead.size}") { downloadSheet = false; deleteDownloads(phoneRead) }
+                        SettingsRow("${doneWord.replaceFirstChar { it.uppercase() }} $plural", icon = R.drawable.ph_trash_light, value = "${phoneRead.size}") { downloadSheet = false; deleteDownloads(phoneRead) }
                         GroupDivider()
                         SettingsRow("All $plural", icon = R.drawable.ph_trash_light, value = "${onPhone.size}", danger = true) { downloadSheet = false; deleteDownloads(onPhone) }
                     }
@@ -709,7 +715,7 @@ fun MediaDetailScreen(
             SheetColumn("${word}s", trailing = if (filter.active) ({ ActionChip("Reset") { setFilter(ChapterFilter(descending = filter.descending, byDate = filter.byDate)) } }) else null) {
                 MokuSectionLabel("Show")
                 Row(horizontalArrangement = Arrangement.spacedBy(MokuSpacing.Sp2)) {
-                    Show.entries.forEach { s -> MokuChip(s.label, selected = filter.show == s) { setFilter(filter.copy(show = s)) } }
+                    Show.entries.forEach { s -> MokuChip(if (s == Show.UNREAD) notDoneWord.replaceFirstChar { it.uppercase() } else s.label, selected = filter.show == s) { setFilter(filter.copy(show = s)) } }
                 }
                 if (groups.isNotEmpty()) {
                     MokuSectionLabel("Scanlators")
@@ -975,7 +981,7 @@ private fun UnitRow(
                 }
             }
             when {
-                read -> Icon(painterResource(R.drawable.ph_check_bold), contentDescription = "Read", tint = colors.textFaint, modifier = Modifier.size(12.dp))
+                read -> Icon(painterResource(R.drawable.ph_check_bold), contentDescription = "Finished", tint = colors.textFaint, modifier = Modifier.size(12.dp))
                 progress != null && progress.progress > 0f -> Text("${(progress.progress * 100).toInt()}%", style = MokuText.label, color = colors.accentFg)
             }
             if (onPhone) Icon(painterResource(R.drawable.ph_device_mobile_light), contentDescription = "Kept on this phone", tint = colors.textFaint, modifier = Modifier.size(14.dp))
@@ -1017,6 +1023,7 @@ private fun SelectionBar(
     count: Int,
     modifier: Modifier,
     onSelectAll: () -> Unit,
+    doneWord: String,
     onRead: () -> Unit,
     onUnread: () -> Unit,
     onDownload: () -> Unit,
@@ -1040,8 +1047,8 @@ private fun SelectionBar(
         SmallIcon(R.drawable.ph_x_light, "Clear selection", onClick = onClose)
         Text("$count", style = MokuText.value, color = colors.textPrimary, modifier = Modifier.padding(horizontal = MokuSpacing.Sp2).weight(1f))
         SmallIcon(R.drawable.ph_list_checks_light, "Select all", onClick = onSelectAll)
-        SmallIcon(R.drawable.ph_eye_light, "Mark read", onClick = onRead)
-        SmallIcon(R.drawable.ph_eye_slash_light, "Mark unread", onClick = onUnread)
+        SmallIcon(R.drawable.ph_eye_light, "Mark $doneWord", onClick = onRead)
+        SmallIcon(R.drawable.ph_eye_slash_light, "Mark un$doneWord", onClick = onUnread)
         SmallIcon(R.drawable.ph_download_simple_light, "Download", onClick = onDownload)
         if (onKeep != null) SmallIcon(R.drawable.ph_device_mobile_light, "Keep on this phone", onClick = onKeep)
         SmallIcon(R.drawable.ph_trash_light, "Delete downloads", onClick = onDelete)

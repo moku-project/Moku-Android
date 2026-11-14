@@ -186,7 +186,7 @@ fun DownloadsScreen(onOpenMedia: (String, String) -> Unit = { _, _ -> }) {
             current == Tab.SERVER -> serverTab(server, onOpenMedia, ::onServer)
             loading -> item { SkeletonRows(5, leading = 40.dp) }
             current == Tab.QUEUE && pending.isEmpty() -> item { Empty("Nothing downloading", "Downloads you start from a series page show up here") }
-            current == Tab.DOWNLOADED && done.isEmpty() -> item { Empty("No downloads yet", "Downloaded chapters and episodes are kept here for offline reading") }
+            current == Tab.DOWNLOADED && done.isEmpty() -> item { Empty("No downloads yet", "Downloaded chapters and episodes are kept here for offline use") }
             current == Tab.QUEUE -> item {
                 SettingsGroup(footer = if (failed.isNotEmpty()) "${failed.size} failed · use the retry button to try them again" else null) {
                     pending.forEachIndexed { i, e ->

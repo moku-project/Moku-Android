@@ -11,43 +11,53 @@ import androidx.media3.exoplayer.source.DefaultMediaSourceFactory
 import androidx.media3.exoplayer.source.MediaSource
 import dev.moku.mobile.backend.SubtitleTrack
 import eu.kanade.tachiyomi.network.NetworkHelper
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.async
+import kotlinx.coroutines.coroutineScope
+import kotlinx.coroutines.withContext
+import okhttp3.OkHttpClient
 import uy.kohesive.injekt.injectLazy
 
-// OkHttp default request properties reach every manifest, segment and key fetch, so
-// extension headers work for HLS without Tsunagu's server-side manifest rewriting.
+// OkHttp default request properties reach every manifest, segment and key fetch, so extension headers apply to HLS and DASH too.
 @UnstableApi
 object HeaderMediaSourceFactory {
     private val network: NetworkHelper by injectLazy()
     private val application: Application by injectLazy()
 
-    fun create(url: String, headers: Map<String, String>, subtitles: List<SubtitleTrack> = emptyList()): MediaSource {
+    /** Checks the stream and loads its subtitles in parallel; throws [StreamUnavailable] when the stream is no good. */
+    suspend fun create(
+        url: String,
+        headers: Map<String, String>,
+        subtitles: List<SubtitleTrack> = emptyList(),
+        sourceClient: OkHttpClient? = null,
+    ): MediaSource = coroutineScope {
+        val loaded = async { SubtitleLoader.load(application, subtitles, network.client, sourceClient) }
+        val kind = withContext(Dispatchers.IO) { StreamProbe.check(network.client, url, headers) }
         val http = OkHttpDataSource.Factory(network.client).apply {
             if (headers.isNotEmpty()) setDefaultRequestProperties(headers)
         }
-        val path = url.substringBefore('?').lowercase()
+        val data = StreamFixDataSource.Factory(
+            DefaultDataSource.Factory(application, http),
+            addReferer = headers.keys.none { it.equals("Referer", true) },
+        )
         val item = MediaItem.Builder()
             .setUri(url)
             .apply {
-                when {
-                    path.endsWith(".m3u8") || path.endsWith("/m3u8") -> setMimeType(MimeTypes.APPLICATION_M3U8)
+                when (kind) {
+                    StreamKind.HLS -> setMimeType(MimeTypes.APPLICATION_M3U8)
+                    StreamKind.DASH -> setMimeType(MimeTypes.APPLICATION_MPD)
+                    StreamKind.PROGRESSIVE -> Unit
                 }
             }
             .setSubtitleConfigurations(
-                subtitles.map {
-                    MediaItem.SubtitleConfiguration.Builder(Uri.parse(it.url))
-                        .setMimeType(subtitleMime(it.url))
+                loaded.await().map {
+                    MediaItem.SubtitleConfiguration.Builder(Uri.fromFile(it.file))
+                        .setMimeType(it.mime)
                         .setLabel(it.label)
                         .build()
                 },
             )
             .build()
-        return DefaultMediaSourceFactory(DefaultDataSource.Factory(application, http)).createMediaSource(item)
-    }
-
-    private fun subtitleMime(url: String): String = when (url.substringBefore('?').substringAfterLast('.').lowercase()) {
-        "srt" -> MimeTypes.APPLICATION_SUBRIP
-        "ass", "ssa" -> MimeTypes.TEXT_SSA
-        "ttml", "xml", "dfxp" -> MimeTypes.APPLICATION_TTML
-        else -> MimeTypes.TEXT_VTT
+        DefaultMediaSourceFactory(data).createMediaSource(item)
     }
 }

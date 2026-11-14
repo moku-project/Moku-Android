@@ -91,7 +91,12 @@ class MediaCache(private val context: Context) {
     /** Fetches fresh details for [originId]/[mediaId] from its source and stores them. */
     suspend fun refresh(originId: String, mediaId: String): CachedMedia = withContext(Dispatchers.IO) {
         val backend = LocalBackendFactory.reconstruct(context, originId)
-        val media = backend.mediaDetails(mediaId)
+        val fetched = backend.mediaDetails(mediaId)
+        // Some sources leave the title off their details page; keep the one already known.
+        val media = if (fetched.title.isNotBlank()) fetched else fetched.copy(
+            title = get(originId, mediaId)?.media?.title?.takeIf { it.isNotBlank() }
+                ?: LibraryMediaDao(db).get(originId, mediaId)?.title.orEmpty(),
+        )
         val units = backend.unitList(mediaId)
         val pkg = originId.substringAfterLast(':')
         val source = runCatching { LocalRepositoryManager(context).getInstalledExtensions().firstOrNull { it.packageName == pkg }?.name }.getOrNull()

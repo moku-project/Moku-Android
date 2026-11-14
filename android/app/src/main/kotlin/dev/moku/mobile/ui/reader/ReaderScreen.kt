@@ -38,13 +38,13 @@ import dev.moku.mobile.backend.BackendUnitContent
 import dev.moku.mobile.backend.ContentBackend
 import dev.moku.mobile.backend.LocalBackendFactory
 import dev.moku.mobile.backend.MediaContentType
-import dev.moku.mobile.backend.SubtitleTrack
 import dev.moku.mobile.library.DownloadEntity
 import dev.moku.mobile.library.DownloadStatus
 import dev.moku.mobile.library.LocalLibraryRepository
 import dev.moku.mobile.library.Libraries
 import dev.moku.mobile.library.MediaCache
 import dev.moku.mobile.library.ReadingProgressEntity
+import dev.moku.mobile.playback.SubtitleLoader
 import dev.moku.mobile.tracking.TrackSync
 import dev.moku.mobile.ui.settings.ActionChip
 import dev.moku.mobile.ui.theme.MokuSpacing
@@ -116,7 +116,7 @@ fun ReaderScreen(originId: String, mediaId: String, unitId: String, onBack: () -
         val b = backend ?: return@LaunchedEffect
         withContext(Dispatchers.IO) {
             launch { runCatching { b.unitList(mediaId) }.onSuccess { units = it.readingOrder() } }
-            launch { runCatching { b.mediaDetails(mediaId) }.onSuccess { media = it } }
+            launch { runCatching { b.mediaDetails(mediaId) }.onSuccess { if (it.title.isNotBlank() || media == null) media = it } }
         }
     }
 
@@ -216,7 +216,10 @@ fun ReaderScreen(originId: String, mediaId: String, unitId: String, onBack: () -
                     visibleId = id
                     save(id, fraction, completed)
                 }
-                is BackendUnitContent.Video -> VideoPlayerScreen(nav, content, resume?.positionSeconds, loaded.offline) { position, duration ->
+                is BackendUnitContent.Video -> VideoPlayerScreen(
+                    nav, content, resume?.positionSeconds, loaded.offline,
+                    reload = { withContext(Dispatchers.IO) { runCatching { backend?.unitContent(mediaId, loaded.unitId) }.getOrNull() as? BackendUnitContent.Video } },
+                ) { position, duration ->
                     val fraction = (position / duration).toFloat().coerceIn(0f, 1f)
                     save(loaded.unitId, fraction, fraction >= 0.9f, position, duration)
                 }
@@ -256,9 +259,7 @@ private fun localContent(download: DownloadEntity): BackendUnitContent? {
         file.name == "content.html" -> BackendUnitContent.Text(file.readText())
         else -> BackendUnitContent.Video(
             streamUrl = Uri.fromFile(file).toString(),
-            subtitles = File(file.parentFile, "subtitle.vtt").takeIf { it.exists() }
-                ?.let { listOf(SubtitleTrack("Subtitles", Uri.fromFile(it).toString())) }
-                .orEmpty(),
+            subtitles = file.parentFile?.let(SubtitleLoader::savedIn).orEmpty(),
         )
     }
 }

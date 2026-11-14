@@ -1,5 +1,6 @@
 package dev.moku.mobile.ui.home
 
+import dev.moku.mobile.backend.MediaContentType
 import dev.moku.mobile.ui.components.rememberReselectListState
 import dev.moku.mobile.ui.components.pressable
 import androidx.annotation.DrawableRes
@@ -205,7 +206,7 @@ private fun ContinueCard(item: ContinueReadingItem, onOpenMedia: (String, String
                 }
             }
             Column(Modifier.weight(1f).fillMaxHeight().padding(vertical = MokuSpacing.Sp1), verticalArrangement = Arrangement.spacedBy(MokuSpacing.Sp1)) {
-                MokuSectionLabel("Continue reading")
+                MokuSectionLabel(if (item.media.contentType == MediaContentType.ANIME) "Continue watching" else "Continue reading")
                 Text(item.media.title, style = MokuText.heading, color = colors.textPrimary, maxLines = 2, overflow = TextOverflow.Ellipsis)
                 Text(item.unitLabel, style = MokuText.meta, color = colors.textMuted)
                 Spacer(Modifier.weight(1f))
@@ -240,7 +241,7 @@ private fun WelcomeCard(onSearchClick: () -> Unit, onExtensionsClick: () -> Unit
             }
             Column(verticalArrangement = Arrangement.spacedBy(3.dp)) {
                 Text("Start your library", style = MokuText.heading, color = colors.textPrimary)
-                Text("Add a source, then pick something to read", style = MokuText.meta, color = colors.textMuted)
+                Text("Add a source, then pick something to read or watch", style = MokuText.meta, color = colors.textMuted)
             }
         }
         Row(horizontalArrangement = Arrangement.spacedBy(MokuSpacing.Sp2)) {

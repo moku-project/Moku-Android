@@ -7,11 +7,15 @@ import dev.moku.mobile.backend.BackendUnitContent
 import dev.moku.mobile.backend.ContentBackend
 import dev.moku.mobile.backend.fetch
 import dev.moku.mobile.backend.imageExtension
+import dev.moku.mobile.playback.DashDownload
+import dev.moku.mobile.playback.HlsDownload
+import dev.moku.mobile.playback.StreamKind
+import dev.moku.mobile.playback.StreamProbe
+import dev.moku.mobile.playback.SubtitleLoader
 import eu.kanade.tachiyomi.network.NetworkHelper
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import okhttp3.HttpUrl.Companion.toHttpUrlOrNull
-import okhttp3.Request
 import uy.kohesive.injekt.injectLazy
 import java.io.File
 import java.io.IOException
@@ -84,14 +88,34 @@ class DownloadManager(private val context: Context, private val repo: LocalLibra
         return dir.absolutePath to total
     }
 
-    private fun downloadVideo(dir: File, content: BackendUnitContent.Video): Pair<String, Long> {
-        val part = File(dir, "video.part")
-        val type = fetchToFile(content.streamUrl, content.headers, part)
-        val file = File(dir, "video." + videoExtension(type, content.streamUrl))
-        part.renameTo(file)
-        content.subtitleUrl?.let { runCatching { fetchToFile(it, emptyMap(), File(dir, "subtitle.vtt")) } }
+    // The preferred source first, then the others, as playback does; HLS is saved by joining its segments.
+    private suspend fun downloadVideo(dir: File, content: BackendUnitContent.Video): Pair<String, Long> {
+        val candidates = (listOf(content.streamUrl to content.headers) + content.qualities.map { it.url to it.headers })
+            .filter { it.first.isNotBlank() }
+            .distinctBy { it.first }
+        var failure: Exception? = null
+        val file = candidates.firstNotNullOfOrNull { (url, headers) ->
+            try {
+                saveStream(dir, url, headers)
+            } catch (e: IOException) {
+                failure = e
+                null
+            }
+        } ?: throw failure ?: IOException("The source returned no video")
+        SubtitleLoader.saveTo(dir, SubtitleLoader.load(context, content.subtitles, network.client, content.sourceClient))
         return file.absolutePath to file.length()
     }
+
+    private fun saveStream(dir: File, url: String, headers: Map<String, String>): File =
+        when (StreamProbe.check(network.client, url, headers)) {
+            StreamKind.HLS -> HlsDownload.save(network.client, url, headers, dir)
+            StreamKind.DASH -> DashDownload.save(network.client, url, headers, dir)
+            StreamKind.PROGRESSIVE -> {
+                val part = File(dir, "video.part")
+                val type = fetchToFile(url, headers, part)
+                File(dir, "video." + videoExtension(type, url)).also { part.renameTo(it) }
+            }
+        }
 
     // Server URLs like http://10.0.2.2:6007/content/3/5/video have no extension, and the dots in the host aren't one.
     private fun videoExtension(contentType: String?, url: String): String {
@@ -115,9 +139,7 @@ class DownloadManager(private val context: Context, private val repo: LocalLibra
     /** Saves [url] to [file] and returns the response's content type. */
     private fun fetchToFile(url: String, headers: Map<String, String>, file: File): String? {
         if (url.isEmpty()) throw IOException("empty content url")
-        val requestBuilder = Request.Builder().url(url)
-        headers.forEach { (key, value) -> requestBuilder.addHeader(key, value) }
-        return network.client.newCall(requestBuilder.build()).execute().use { response ->
+        return network.client.newCall(StreamProbe.request(url, headers).build()).execute().use { response ->
             if (!response.isSuccessful) throw IOException("GET $url failed: HTTP ${response.code}")
             val body = response.body
             file.outputStream().use { out -> body.byteStream().copyTo(out) }

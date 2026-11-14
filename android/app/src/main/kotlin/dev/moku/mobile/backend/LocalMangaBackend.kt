@@ -20,9 +20,6 @@ class LocalMangaBackend(
 
     val capabilities = ContentBackendCapabilities(supportsOffline = true)
 
-    /** Mangas are addressed by url; we need the full SManga to make further source calls, so cache it. */
-    private val mangaCache = LinkedHashMap<String, SManga>()
-    private val chapterCache = LinkedHashMap<String, SChapter>()
 
     override suspend fun popularMedia(page: Int): BackendPage<BackendMedia> {
         val result = source.getPopularManga(page)
@@ -43,31 +40,31 @@ class LocalMangaBackend(
     override suspend fun filterOptions(): List<BackendFilter> = source.getFilterList().list.map { it.toBackendFilter() }
 
     override suspend fun mediaDetails(mediaId: String): BackendMedia {
-        val manga = mangaCache[mediaId] ?: SManga.create().apply { url = mediaId }
+        val manga = SourceEntries.get<SManga>(originId, "media", mediaId) ?: SManga.create().apply { url = mediaId }
         val update = source.getMangaUpdate(manga, emptyList(), fetchDetails = true, fetchChapters = false)
-        return update.manga.cacheAndConvert()
+        return (if (update.manga === manga) manga else manga.mergeDetails(update.manga)).cacheAndConvert()
     }
 
     override suspend fun unitList(mediaId: String): List<BackendUnit> {
-        val manga = mangaCache[mediaId] ?: SManga.create().apply { url = mediaId }
+        val manga = SourceEntries.get<SManga>(originId, "media", mediaId) ?: SManga.create().apply { url = mediaId }
         val update = source.getMangaUpdate(manga, emptyList(), fetchDetails = false, fetchChapters = true)
         return update.chapters.map { it.cacheAndConvert(mediaId) }
     }
 
     override suspend fun unitContent(mediaId: String, unitId: String): BackendUnitContent {
-        val chapter = chapterCache[unitId] ?: SChapter.create().apply { url = unitId }
+        val chapter = SourceEntries.get<SChapter>(originId, "unit", unitId) ?: SChapter.create().apply { url = unitId }
         val pages = source.getPageList(chapter)
         return BackendUnitContent.Pages(pages.mapIndexed { index, page -> page.toBackendPageImage(index) })
     }
 
     private fun SManga.cacheAndConvert(): BackendMedia {
         (source as? HttpSource)?.let { CoverHeaders.remember(thumbnail_url, it.headers.toMap()) }
-        mangaCache[url] = this
+        SourceEntries.put(originId, "media", url, this)
         return BackendMedia(
             id = url,
             originId = originId,
             contentType = MediaContentType.MANGA,
-            title = title,
+            title = unsetAsNull { title }.orEmpty(),
             thumbnailUrl = thumbnail_url,
             description = description,
             status = status.toStatusString(),
@@ -80,7 +77,7 @@ class LocalMangaBackend(
     }
 
     private fun SChapter.cacheAndConvert(mediaId: String): BackendUnit {
-        chapterCache[url] = this
+        SourceEntries.put(originId, "unit", url, this)
         return BackendUnit(
             id = url,
             mediaId = mediaId,

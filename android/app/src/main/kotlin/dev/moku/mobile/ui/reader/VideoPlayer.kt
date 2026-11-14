@@ -44,6 +44,7 @@ import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableLongStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
@@ -63,6 +64,7 @@ import androidx.media3.common.Player
 import androidx.media3.common.TrackSelectionOverride
 import androidx.media3.common.Tracks
 import androidx.media3.common.util.UnstableApi
+import androidx.media3.datasource.HttpDataSource
 import androidx.media3.exoplayer.ExoPlayer
 import androidx.media3.ui.AspectRatioFrameLayout
 import androidx.media3.ui.CaptionStyleCompat
@@ -70,6 +72,9 @@ import androidx.media3.ui.PlayerView
 import dev.moku.mobile.R
 import dev.moku.mobile.backend.BackendUnitContent
 import dev.moku.mobile.playback.HeaderMediaSourceFactory
+import dev.moku.mobile.playback.StreamUnavailable
+import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.launch
 import dev.moku.mobile.ui.components.MokuChip
 import dev.moku.mobile.ui.components.MokuSectionLabel
 import dev.moku.mobile.ui.settings.ActionChip
@@ -91,9 +96,11 @@ internal fun VideoPlayerScreen(
     video: BackendUnitContent.Video,
     startSeconds: Double?,
     offline: Boolean,
+    reload: (suspend () -> BackendUnitContent.Video?)? = null,
     onProgress: (positionSeconds: Double, durationSeconds: Double) -> Unit,
 ) {
     val context = LocalContext.current
+    val scope = rememberCoroutineScope()
     val colors = MokuTheme.colors
     val activity = remember(context) { context.findActivity() }
     val landscape = LocalConfiguration.current.orientation == Configuration.ORIENTATION_LANDSCAPE
@@ -105,7 +112,10 @@ internal fun VideoPlayerScreen(
             .setSeekForwardIncrementMs(SEEK_MS)
             .build()
     }
-    var quality by remember(video) { mutableIntStateOf(video.qualities.indexOfFirst { it.url == video.streamUrl }.coerceAtLeast(0)) }
+    var current by remember(video) { mutableStateOf(video) }
+    var quality by remember(current) { mutableIntStateOf(current.qualities.indexOfFirst { it.url == current.streamUrl }.coerceAtLeast(0)) }
+    var tried by remember(current) { mutableStateOf(emptySet<Int>()) }
+    var reloaded by remember(video) { mutableStateOf(false) }
     var playing by remember { mutableStateOf(false) }
     var buffering by remember { mutableStateOf(true) }
     var ended by remember { mutableStateOf(false) }
@@ -124,6 +134,20 @@ internal fun VideoPlayerScreen(
     var countdown by remember { mutableStateOf<Int?>(null) }
     var attempt by remember { mutableIntStateOf(0) }
     var started by remember { mutableStateOf(false) }
+
+    // Like Tsunagu: an expired link gets the episode resolved again once, then every other source is tried before giving up.
+    fun fail(message: String, httpCode: Int) {
+        val refetch = reload
+        if ((httpCode == 403 || httpCode == 410) && !reloaded && !offline && refetch != null) {
+            reloaded = true
+            scope.launch { refetch()?.let { current = it } ?: run { error = message } }
+            return
+        }
+        val done = tried + quality
+        tried = done
+        val next = current.qualities.indices.firstOrNull { it !in done }
+        if (next != null) quality = next else error = message
+    }
 
     ReaderSystemBars(hidden = true)
 
@@ -146,7 +170,8 @@ internal fun VideoPlayerScreen(
             }
 
             override fun onPlayerError(e: PlaybackException) {
-                error = e.errorCodeName.removePrefix("ERROR_CODE_").replace('_', ' ').lowercase().replaceFirstChar { it.uppercase() }
+                val code = (e.cause as? HttpDataSource.InvalidResponseCodeException)?.responseCode ?: 0
+                fail(e.errorCodeName.removePrefix("ERROR_CODE_").replace('_', ' ').lowercase().replaceFirstChar { it.uppercase() }, code)
             }
 
             override fun onTracksChanged(tracks: Tracks) {
@@ -164,13 +189,19 @@ internal fun VideoPlayerScreen(
         }
     }
 
-    LaunchedEffect(quality, attempt) {
-        val variant = video.qualities.getOrNull(quality)
+    LaunchedEffect(current, quality, attempt) {
+        val variant = current.qualities.getOrNull(quality)
         val resume = if (started) player.currentPosition else ((startSeconds ?: 0.0) * 1000).toLong()
-        player.setMediaSource(
-            HeaderMediaSourceFactory.create(variant?.url ?: video.streamUrl, variant?.headers ?: video.headers, video.subtitles),
-            resume,
-        )
+        buffering = true
+        val source = try {
+            HeaderMediaSourceFactory.create(variant?.url ?: current.streamUrl, variant?.headers ?: current.headers, current.subtitles, current.sourceClient)
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            fail(e.message ?: "Couldn't open this stream", (e as? StreamUnavailable)?.code ?: 0)
+            return@LaunchedEffect
+        }
+        player.setMediaSource(source, resume)
         player.prepare()
         player.playWhenReady = true
         started = true
@@ -270,6 +301,15 @@ internal fun VideoPlayerScreen(
             modifier = Modifier.fillMaxSize(),
         )
 
+        current.skipMarkers.firstOrNull { position >= it.startMs && position < it.endMs - 1000 }?.let { marker ->
+            Box(
+                Modifier.fillMaxSize().windowInsetsPadding(WindowInsets.safeDrawing).padding(horizontal = MokuSpacing.Sp4, vertical = 72.dp),
+                contentAlignment = Alignment.BottomEnd,
+            ) {
+                ActionChip("Skip ${skipLabel(marker.name)}", icon = R.drawable.ph_skip_forward_fill, accent = true) { player.seekTo(marker.endMs); poke++ }
+            }
+        }
+
         seekFlash?.let { (forward, seconds) ->
             Box(Modifier.fillMaxSize().padding(horizontal = 64.dp), contentAlignment = if (forward) Alignment.CenterEnd else Alignment.CenterStart) {
                 Text(if (forward) "+$seconds s" else "−$seconds s", style = MokuText.value, color = Color.White, modifier = Pill())
@@ -291,7 +331,7 @@ internal fun VideoPlayerScreen(
                     Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
                         Text(nav.unitLabel, style = MokuText.body, color = Color.White, maxLines = 1, overflow = TextOverflow.Ellipsis)
                         Text(
-                            listOfNotNull(nav.title.takeIf { it.isNotBlank() }, video.qualities.getOrNull(quality)?.label, "Offline".takeIf { offline }).joinToString(" · "),
+                            listOfNotNull(nav.title.takeIf { it.isNotBlank() }, current.qualities.getOrNull(quality)?.label, "Offline".takeIf { offline }).joinToString(" · "),
                             style = MokuText.meta,
                             color = Color.White.copy(alpha = 0.6f),
                             maxLines = 1,
@@ -323,8 +363,8 @@ internal fun VideoPlayerScreen(
                             Text("Playback failed", style = MokuText.heading, color = Color.White)
                             Text(error.orEmpty(), style = MokuText.meta, color = Color.White.copy(alpha = 0.6f))
                             Row(Modifier.padding(top = MokuSpacing.Sp2), horizontalArrangement = Arrangement.spacedBy(MokuSpacing.Sp2)) {
-                                ActionChip("Retry", icon = R.drawable.ph_arrow_clockwise_light, accent = true) { error = null; attempt++ }
-                                if (video.qualities.size > 1) ActionChip("Try another source") { error = null; quality = (quality + 1) % video.qualities.size }
+                                ActionChip("Retry", icon = R.drawable.ph_arrow_clockwise_light, accent = true) { error = null; tried = emptySet(); attempt++ }
+                                if (current.qualities.size > 1) ActionChip("Try another source") { error = null; quality = (quality + 1) % current.qualities.size }
                             }
                         }
                     } else {
@@ -397,10 +437,10 @@ internal fun VideoPlayerScreen(
                     Row(horizontalArrangement = Arrangement.spacedBy(MokuSpacing.Sp2)) {
                         SPEEDS.forEach { s -> MokuChip("${s}x".replace(".0x", "x"), selected = speed == s) { speed = s } }
                     }
-                    if (video.qualities.size > 1) {
+                    if (current.qualities.size > 1) {
                         MokuSectionLabel("Source")
                         Column(verticalArrangement = Arrangement.spacedBy(MokuSpacing.Sp2)) {
-                            video.qualities.forEachIndexed { i, q ->
+                            current.qualities.forEachIndexed { i, q ->
                                 OptionRow(q.label.ifBlank { "Source ${i + 1}" }, selected = i == quality) { quality = i; settings = false }
                             }
                         }
@@ -456,6 +496,16 @@ private fun OptionRow(label: String, selected: Boolean, onClick: () -> Unit) {
 @Composable
 private fun Pill(): Modifier =
     Modifier.clip(RoundedCornerShape(MokuRadius.Xl)).background(Color.Black.copy(alpha = 0.6f)).padding(horizontal = MokuSpacing.Sp4, vertical = MokuSpacing.Sp2)
+
+private fun skipLabel(name: String): String {
+    val n = name.lowercase()
+    return when {
+        "open" in n || "intro" in n || n == "op" -> "intro"
+        "end" in n || "outro" in n || "credit" in n || n == "ed" -> "outro"
+        "recap" in n -> "recap"
+        else -> n
+    }
+}
 
 private fun formatTime(ms: Long): String {
     val total = (ms / 1000).coerceAtLeast(0)

@@ -67,16 +67,21 @@ sealed interface BackendUnitContent {
     data class Video(
         val streamUrl: String,
         val headers: Map<String, String> = emptyMap(),
-        val subtitleUrl: String? = null,
         val qualities: List<VideoVariant> = emptyList(),
         val subtitles: List<SubtitleTrack> = emptyList(),
+        val skipMarkers: List<SkipMarker> = emptyList(),
+        // The source's own client, for subtitle hosts that only answer its cookies or interceptors.
+        val sourceClient: okhttp3.OkHttpClient? = null,
     ) : BackendUnitContent
     data class Text(val html: String) : BackendUnitContent
 }
 
 data class VideoVariant(val label: String, val url: String, val headers: Map<String, String> = emptyMap())
 
-data class SubtitleTrack(val label: String, val url: String)
+data class SubtitleTrack(val label: String, val url: String, val headers: Map<String, String> = emptyMap())
+
+/** An intro, recap or ending the player offers to skip. */
+data class SkipMarker(val name: String, val startMs: Long, val endMs: Long)
 
 data class BackendPageImage(
     val index: Int,

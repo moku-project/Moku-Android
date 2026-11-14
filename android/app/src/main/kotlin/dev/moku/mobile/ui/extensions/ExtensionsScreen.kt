@@ -57,6 +57,7 @@ import dev.moku.mobile.ui.settings.SettingsGroup
 import dev.moku.mobile.ui.settings.SettingsPage
 import dev.moku.mobile.ui.settings.SettingsRow
 import dev.moku.mobile.ui.settings.TextInput
+import dev.moku.mobile.ui.settings.settingsGroupItems
 import dev.moku.mobile.ui.theme.MokuRadius
 import dev.moku.mobile.ui.theme.MokuSpacing
 import dev.moku.mobile.ui.theme.MokuText
@@ -293,17 +294,21 @@ private fun RepoPage(
         if (entries.isEmpty() || repo.lastSyncedAt == null) sync()
     }
 
-    val shown = entries.filter { query.isBlank() || it.name.contains(query.trim(), ignoreCase = true) || it.lang.equals(query.trim(), ignoreCase = true) }
+    val shown = remember(entries, query) {
+        val q = query.trim()
+        if (q.isEmpty()) entries else entries.filter { it.name.contains(q, ignoreCase = true) || it.lang.equals(q, ignoreCase = true) }
+    }
 
-    SettingsPage(repo.title(), onBack = onBack, trailing = {
+    // spacing = 0 so the lazily composed rows join into one card; gaps are added per item below.
+    SettingsPage(repo.title(), onBack = onBack, spacing = 0.dp, trailing = {
         MokuHeaderAction(R.drawable.ph_arrows_clockwise_light, "Refresh", active = syncing) { scope.launch { sync() } }
         MokuHeaderAction(R.drawable.ph_trash_light, if (confirmRemove) "Confirm remove" else "Remove repository", active = confirmRemove) {
             if (confirmRemove) scope.launch { manager.removeRepository(repo.id); onBack() } else confirmRemove = true
         }
     }) {
-        item { MokuSearchField(query, { query = it }, "Search ${entries.size} extensions") }
+        item { Box(Modifier.padding(bottom = MokuSpacing.Sp5)) { MokuSearchField(query, { query = it }, "Search ${entries.size} extensions") } }
         if (confirmRemove) {
-            item { Text("Tap the trash button again to remove this repository.", style = MokuText.meta, color = Danger) }
+            item { Text("Tap the trash button again to remove this repository.", style = MokuText.meta, color = Danger, modifier = Modifier.padding(bottom = MokuSpacing.Sp5)) }
         }
         when {
             syncing && entries.isEmpty() -> item {
@@ -319,34 +324,29 @@ private fun RepoPage(
                 }
             }
             shown.isEmpty() -> item { Text("No matches", style = MokuText.sub, color = colors.textFaint, modifier = Modifier.padding(MokuSpacing.Sp2)) }
-            else -> item {
-                SettingsGroup(footer = repo.indexUrl) {
-                    shown.forEachIndexed { i, ext ->
-                        if (i > 0) GroupDivider()
-                        val have = installedPkgs[ext.packageName]
-                        SettingsRow(
-                            ext.name,
-                            subtitle = "${ext.lang.uppercase()} · v${ext.versionName}" + if (ext.isNsfw) " · 18+" else "",
-                            leading = { ExtensionIcon(ext.iconUrl, ext.name) },
-                            onClick = { onOpen(ExtensionRef(ext.packageName, installedEntities.firstOrNull { it.packageName == ext.packageName }, ext, repo.contentType)) },
-                            trailing = {
-                                when {
-                                    ext.packageName in busy -> CircularProgressIndicator(color = colors.accent, strokeWidth = 2.dp, modifier = Modifier.size(18.dp))
-                                    have == ext.versionName -> Text("Installed", style = MokuText.meta, color = colors.textFaint)
-                                    else -> ActionChip(if (have != null) "Update" else "Install", accent = true) {
-                                        busy = busy + ext.packageName
-                                        scope.launch {
-                                            runCatching { manager.installExtension(ext, repo.contentType) }
-                                                .onSuccess { installedPkgs = installedPkgs + (ext.packageName to ext.versionName); onChanged() }
-                                                .onFailure { MokuToast.show(it.message ?: "Install failed") }
-                                            busy = busy - ext.packageName
-                                        }
-                                    }
+            else -> settingsGroupItems(shown, key = { it.packageName }, footer = repo.indexUrl) { ext ->
+                val have = installedPkgs[ext.packageName]
+                SettingsRow(
+                    ext.name,
+                    subtitle = "${ext.lang.uppercase()} · v${ext.versionName}" + if (ext.isNsfw) " · 18+" else "",
+                    leading = { ExtensionIcon(ext.iconUrl, ext.name) },
+                    onClick = { onOpen(ExtensionRef(ext.packageName, installedEntities.firstOrNull { it.packageName == ext.packageName }, ext, repo.contentType)) },
+                    trailing = {
+                        when {
+                            ext.packageName in busy -> CircularProgressIndicator(color = colors.accent, strokeWidth = 2.dp, modifier = Modifier.size(18.dp))
+                            have == ext.versionName -> Text("Installed", style = MokuText.meta, color = colors.textFaint)
+                            else -> ActionChip(if (have != null) "Update" else "Install", accent = true) {
+                                busy = busy + ext.packageName
+                                scope.launch {
+                                    runCatching { manager.installExtension(ext, repo.contentType) }
+                                        .onSuccess { installedPkgs = installedPkgs + (ext.packageName to ext.versionName); onChanged() }
+                                        .onFailure { MokuToast.show(it.message ?: "Install failed") }
+                                    busy = busy - ext.packageName
                                 }
-                            },
-                        )
-                    }
-                }
+                            }
+                        }
+                    },
+                )
             }
         }
     }
