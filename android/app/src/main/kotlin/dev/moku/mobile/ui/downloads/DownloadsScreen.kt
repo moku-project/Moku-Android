@@ -98,8 +98,12 @@ fun DownloadsScreen(onOpenMedia: (String, String) -> Unit = { _, _ -> }) {
     var server by remember { mutableStateOf<ServerState>(ServerState.Loading) }
     var serverReload by remember { mutableIntStateOf(0) }
 
-    LaunchedEffect(reload) {
-        downloads = repo.getDownloads().sortedByDescending { it.createdAt }
+    LaunchedEffect(reload, serverMode) {
+        // Only the library on screen: the phone's titles, or the signed-in server's. A server's stay on disk until it's back.
+        val showing = if (serverMode) ServerSession.current?.instanceId else null
+        downloads = repo.getDownloads()
+            .filter { ServerOrigin.parse(it.originId)?.instanceId == showing }
+            .sortedByDescending { it.createdAt }
         val library = repo.getLibrary().associateBy { it.originId to it.mediaId }
         titles = downloads.map { it.originId to it.mediaId }.distinct().associateWith { key ->
             val cached = cache.get(key.first, key.second)
@@ -145,7 +149,7 @@ fun DownloadsScreen(onOpenMedia: (String, String) -> Unit = { _, _ -> }) {
     }
 
     fun onServer(action: suspend () -> Unit) = scope.launch {
-        runCatching { action() }.onFailure { MokuToast.show(it.message ?: "The server didn't take that") }
+        runCatching { action() }.onFailure { MokuToast.show(it.message ?: "${ServerSession.current?.name ?: "The server"} didn't take that") }
         serverReload++
     }
 
@@ -215,43 +219,30 @@ fun DownloadsScreen(onOpenMedia: (String, String) -> Unit = { _, _ -> }) {
                 }
             }
             else -> {
-                // The phone's own titles first, then one group per server, so it's clear where each came from.
-                val groups = done.groupBy { ServerOrigin.parse(it.key.first)?.instanceId }
-                    .toList()
-                    .sortedBy { (instance, _) -> instance != null }
-                groups.forEach { (instance, series) ->
-                    item(key = "group:${instance ?: "phone"}") {
-                        SettingsGroup(
-                            label = if (instance == null) "This phone's library" else "From ${ServerSession.nameOf(instance) ?: "a server"}",
-                            footer = when {
-                                instance == null -> null
-                                instance == ServerSession.current?.instanceId -> null
-                                else -> "This phone isn't signed in to that server. These still open, and progress waits until you sign in to it again."
-                            },
-                        ) {
-                            series.forEachIndexed { i, s ->
-                                if (i > 0) GroupDivider()
-                                val open = expanded == s.key
-                                SettingsRow(
-                                    s.info?.title ?: s.key.second,
-                                    subtitle = "${s.entries.size} downloaded · ${formatBytes(s.bytes)}",
-                                    leading = { Cover(s.info?.thumbnailUrl) },
-                                    chevron = !open,
-                                ) { expanded = if (open) null else s.key }
-                                if (open) {
-                                    Row(Modifier.fillMaxWidth().padding(start = 60.dp, end = MokuSpacing.Sp3, bottom = MokuSpacing.Sp2), horizontalArrangement = Arrangement.spacedBy(MokuSpacing.Sp2)) {
-                                        ActionChip("Open", icon = R.drawable.ph_book_open_light) { onOpenMedia(s.key.first, s.key.second) }
-                                        ActionChip("Delete all", icon = R.drawable.ph_trash_light, danger = true) { remove(s.entries) }
-                                    }
-                                    s.entries.sortedBy { e -> s.info?.units?.indexOfFirst { it.id == e.unitId } ?: 0 }.forEach { e ->
-                                        Row(
-                                            Modifier.fillMaxWidth().padding(start = 60.dp, end = MokuSpacing.Sp3),
-                                            verticalAlignment = Alignment.CenterVertically,
-                                        ) {
-                                            Text(unitName(s.info, e.unitId), style = MokuText.sub, color = colors.textSecondary, modifier = Modifier.weight(1f), maxLines = 1)
-                                            Text(formatBytes(e.bytes), style = MokuText.meta, color = colors.textFaint)
-                                            IconButton(R.drawable.ph_trash_light, "Delete") { remove(listOf(e)) }
-                                        }
+                item(key = "downloaded") {
+                    SettingsGroup {
+                        done.forEachIndexed { i, s ->
+                            if (i > 0) GroupDivider()
+                            val open = expanded == s.key
+                            SettingsRow(
+                                s.info?.title ?: s.key.second,
+                                subtitle = "${s.entries.size} downloaded · ${formatBytes(s.bytes)}",
+                                leading = { Cover(s.info?.thumbnailUrl) },
+                                chevron = !open,
+                            ) { expanded = if (open) null else s.key }
+                            if (open) {
+                                Row(Modifier.fillMaxWidth().padding(start = 60.dp, end = MokuSpacing.Sp3, bottom = MokuSpacing.Sp2), horizontalArrangement = Arrangement.spacedBy(MokuSpacing.Sp2)) {
+                                    ActionChip("Open", icon = R.drawable.ph_book_open_light) { onOpenMedia(s.key.first, s.key.second) }
+                                    ActionChip("Delete all", icon = R.drawable.ph_trash_light, danger = true) { remove(s.entries) }
+                                }
+                                s.entries.sortedBy { e -> s.info?.units?.indexOfFirst { it.id == e.unitId } ?: 0 }.forEach { e ->
+                                    Row(
+                                        Modifier.fillMaxWidth().padding(start = 60.dp, end = MokuSpacing.Sp3),
+                                        verticalAlignment = Alignment.CenterVertically,
+                                    ) {
+                                        Text(unitName(s.info, e.unitId), style = MokuText.sub, color = colors.textSecondary, modifier = Modifier.weight(1f), maxLines = 1)
+                                        Text(formatBytes(e.bytes), style = MokuText.meta, color = colors.textFaint)
+                                        IconButton(R.drawable.ph_trash_light, "Delete") { remove(listOf(e)) }
                                     }
                                 }
                             }

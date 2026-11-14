@@ -57,7 +57,7 @@ private suspend fun signIn(baseUrl: String, credential: Credential?, secret: Str
         else -> null
     }
     val about = try {
-        client.query(TsunaguServer(baseUrl, token, null, ""), "query About { about { name version instanceId } }")["about"]?.jsonObject
+        client.query(TsunaguServer(baseUrl, token, null, ""), "query About { about { name instanceId } }")["about"]?.jsonObject
     } catch (e: AuthRequiredException) {
         if (token == null) return null to Credential.TOKEN
         throw IOException(if (credential == Credential.TOKEN) "That token wasn't accepted" else "The server turned the session down")
@@ -66,9 +66,8 @@ private suspend fun signIn(baseUrl: String, credential: Credential?, secret: Str
         throw e
     }
     val name = about?.strOrNull("name")?.takeIf { it.isNotBlank() } ?: "Tsunagu"
-    val version = about?.strOrNull("version")
     val instanceId = about?.strOrNull("instanceId") ?: throw IOException("The server didn't say who it is")
-    return TsunaguServer(baseUrl, token, if (version != null) "$name $version" else name, instanceId) to null
+    return TsunaguServer(baseUrl, token, name, instanceId) to null
 }
 
 @Composable
@@ -158,7 +157,7 @@ internal fun ServerPage(onBack: () -> Unit) {
                     footer = if (serverMode) {
                         "Library, folders, progress and Discover come from ${current.name ?: "the server"}. Turning this off keeps you signed in and keeps its downloads."
                     } else {
-                        "Showing this phone's own library. Downloads from ${current.name ?: "the server"} stay readable under Downloads."
+                        "Showing this phone's own library. ${current.name ?: "The server"}'s downloads stay on this phone and come back with server mode."
                     },
                 ) {
                     SettingsToggleRow(
@@ -209,7 +208,7 @@ internal fun ServerPage(onBack: () -> Unit) {
                         SettingsRow(
                             "Disconnect, keep downloads",
                             icon = R.drawable.ph_download_simple_bold,
-                            subtitle = if (downloadCount > 0) "$downloadCount stay readable on this phone" else "There are none right now",
+                            subtitle = if (downloadCount > 0) "$downloadCount stay on this phone for when you sign in again" else "There are none right now",
                         ) { disconnect(keepDownloads = true) }
                         GroupDivider()
                         SettingsRow(

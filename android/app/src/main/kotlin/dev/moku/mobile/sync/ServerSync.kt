@@ -111,7 +111,7 @@ object ServerSync {
             _status.value = _status.value.copy(running = true)
             try {
                 verified = null
-                verifyServer()
+                verifyServer(app)
                 lock.withLock { flushLocked(app) }
             } finally {
                 _status.value = _status.value.copy(running = false)
@@ -158,7 +158,8 @@ object ServerSync {
         _status.value = SyncStatus()
     }
 
-    private suspend fun forget(context: Context, instanceId: String) {
+    /** Everything a server left on this phone: downloads, progress, cached details and the offline snapshot. */
+    suspend fun forget(context: Context, instanceId: String) {
         val prefix = "${ServerOrigin.PREFIX}$instanceId:"
         val repo = LocalLibraryRepository(context)
         val downloads = repo.getDownloads().filter { it.originId.startsWith(prefix) }
@@ -197,7 +198,7 @@ object ServerSync {
 
     private suspend fun flushLocked(context: Context) {
         val instance = ServerSession.current?.instanceId ?: return
-        verifyServer()
+        verifyServer(context)
         val outbox = Outbox(context)
         // Progress for another server waits until this phone signs in to that one.
         val entries = outbox.pending().filter { ServerOrigin.parse(it.payload.optString("originId"))?.instanceId == instance }
@@ -235,12 +236,13 @@ object ServerSync {
     }
 
     /** A reinstalled server at the same address is a different server, so nothing is sent until signing in again. */
-    private suspend fun verifyServer() {
+    private suspend fun verifyServer(context: Context) {
         val server = ServerSession.current ?: return
         val key = server.baseUrl + "|" + server.instanceId
         if (verified == key) return
-        val about = ServerSession.client.query("query Ping { about { instanceId } }")["about"] as? JsonObject
+        val about = ServerSession.client.query("query Ping { about { instanceId name } }")["about"] as? JsonObject
         if (about?.strOrNull("instanceId") != server.instanceId) throw ServerReplacedException()
+        about.strOrNull("name")?.takeIf { it.isNotBlank() }?.let { ServerSession.rename(context, it) }
         verified = key
     }
 

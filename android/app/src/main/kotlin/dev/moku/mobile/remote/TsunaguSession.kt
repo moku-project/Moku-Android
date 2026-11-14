@@ -90,6 +90,17 @@ object ServerSession {
         setServerMode(context, server != null)
     }
 
+    /** The owner renamed the server; its labels follow. */
+    @Synchronized
+    fun rename(context: Context, name: String) {
+        init(context)
+        val server = current ?: return
+        if (server.name == name) return
+        current = server.copy(name = name)
+        prefs?.edit { putString(KEY_NAME, name) }
+        known?.edit { putString(server.instanceId, name) }
+    }
+
     fun setServerMode(context: Context, on: Boolean) {
         init(context)
         val value = on && current != null

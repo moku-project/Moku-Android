@@ -158,7 +158,7 @@ private fun SettingsRoot(onOpen: (Page) -> Unit, onOpenExtensions: () -> Unit) {
                     SettingsRow(
                         "Server",
                         icon = if (server != null) R.drawable.ph_cloud_check_light else R.drawable.ph_cloud_slash_light,
-                        subtitle = server?.baseUrl ?: "Sync with Tsunagu on your computer",
+                        subtitle = server?.let { it.name ?: it.baseUrl } ?: "Sync with Tsunagu on your computer",
                         value = if (server != null) (if (ServerSession.active) "On" else "Off") else null,
                         chevron = true,
                     ) { onOpen(Page.Server) }
@@ -364,7 +364,7 @@ private fun StoragePage(onBack: () -> Unit) {
                     }
                 }
                 item {
-                    SettingsGroup("Categories", footer = "Clearing a category frees space without touching your library.") {
+                    SettingsGroup("Categories", footer = "Clearing frees space without touching your library. Clearing a server you've left also removes its progress and anything else it left here.") {
                         storage.categories.forEachIndexed { i, category ->
                             if (i > 0) GroupDivider()
                             val confirm = confirming == category.key
@@ -372,15 +372,16 @@ private fun StoragePage(onBack: () -> Unit) {
                                 category.label,
                                 icon = R.drawable.ph_hard_drives_light,
                                 subtitle = "${formatBytes(category.bytes)} · ${category.fileCount} files",
-                                trailing = {
-                                    ActionChip(if (confirm) "Confirm" else "Clear", danger = confirm) {
+                                // The database is the library itself; it goes with Backup & restore, never from here.
+                                trailing = if (category.key == "database") null else {
+                                    { ActionChip(if (confirm) "Confirm" else "Clear", danger = confirm) {
                                         if (!confirm) confirming = category.key
                                         else scope.launch {
                                             manager.clearCategory(category.key)
                                             confirming = null
                                             info = manager.storageInfo()
                                         }
-                                    }
+                                    } }
                                 },
                             )
                         }

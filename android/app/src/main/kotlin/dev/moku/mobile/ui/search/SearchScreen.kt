@@ -124,7 +124,7 @@ fun SearchScreen(
         )
 
         when {
-            noSources -> Message(if (ServerSession.active) "The server has no sources for this yet." else "No sources installed. Add some from Extensions.")
+            noSources -> Message(if (ServerSession.active) "${ServerSession.current?.name ?: "The server"} has no sources for this yet." else "No sources installed. Add some from Extensions.")
             results.isEmpty() && loading -> SkeletonPosterGrid(modifier = Modifier.padding(MokuSpacing.Sp4))
             results.isEmpty() -> Message("No results.")
             else -> LazyVerticalGrid(
