@@ -74,6 +74,17 @@ private fun JsonObject.toStatus() = Status(
 
 private fun plural(n: Int, one: String, many: String) = if (n == 1) "1 $one" else "$n $many"
 
+// A firewall drops the connection silently, so a timeout is the only sign of it; name the port to open.
+private fun pairFailure(error: Throwable?, name: String?, address: String?): String {
+    val message = error?.message.orEmpty()
+    val unreachable = listOf("deadline exceeded", "i/o timeout", "connection refused", "no route to host", "network is unreachable")
+        .any { message.contains(it, ignoreCase = true) }
+    if (message.isNotEmpty() && !unreachable) return message
+    val who = name ?: "that device"
+    val port = address?.let { Uri.parse(it).port }?.takeIf { it > 0 } ?: 6008
+    return "Couldn't reach $who. Check it's on the same Wi-Fi and that its firewall lets in port $port."
+}
+
 // Changing text mid-typing makes the keyboard drop characters, so what's typed is kept as is and only drawn
 // like the other device shows it: capitals, with a space after the first four.
 private object CodeFormat : VisualTransformation {
@@ -178,7 +189,7 @@ internal fun SyncPage(onBack: () -> Unit) {
             if (result.isSuccess) break
             last = result.exceptionOrNull()
         }
-        if (preview == null) pairError = last?.message ?: "Couldn't reach that device"
+        if (preview == null) pairError = pairFailure(last, t.name, t.addresses.firstOrNull())
         busy = false
     }
 
@@ -199,7 +210,7 @@ internal fun SyncPage(onBack: () -> Unit) {
             preview = null
             load()
             scan()
-        }.onFailure { pairError = it.message ?: "Couldn't pair" }
+        }.onFailure { pairError = pairFailure(it, p.name, address) }
         busy = false
     }
 
