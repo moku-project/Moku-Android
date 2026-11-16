@@ -183,7 +183,7 @@ class CoreLibrary(context: Context, private val strict: Boolean = false) : Libra
                     put("startPage", s.startPage); put("endPage", s.endPage)
                     put("startedAt", java.time.Instant.ofEpochMilli(s.startedAt).toString())
                     put("endedAt", java.time.Instant.ofEpochMilli(s.endedAt).toString())
-                    put("durationMs", (s.endedAt - s.startedAt).coerceAtMost(SESSION_CAP_MS).toInt())
+                    put("durationMs", (s.endedAt - s.startedAt).coerceAtMost(ReadingSessions.GAP_MS).toInt())
                     put("chapters", s.units.coerceAtLeast(1))
                 })
             })
@@ -337,7 +337,6 @@ class CoreLibrary(context: Context, private val strict: Boolean = false) : Libra
     private companion object {
         const val TAG = "CoreLibrary"
         const val MEMO_MS = 3_000L
-        const val SESSION_CAP_MS = 3_600_000L
         const val PROGRESS = "chapterId progress completed positionSeconds durationSeconds updatedAt"
         @Volatile var recent: Memo? = null
         val mediaIds = ConcurrentHashMap<String, String>()

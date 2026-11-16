@@ -10,6 +10,8 @@ import dev.moku.mobile.library.LocalLibraryDatabase
 import dev.moku.mobile.library.LocalLibraryRepository
 import dev.moku.mobile.library.ReadingProgressDao
 import dev.moku.mobile.library.ReadingProgressEntity
+import dev.moku.mobile.library.ReadingSession
+import dev.moku.mobile.library.ReadingSessions
 import dev.moku.mobile.remote.AuthRequiredException
 import dev.moku.mobile.remote.GraphQLException
 import dev.moku.mobile.remote.ServerSession
@@ -39,6 +41,7 @@ import kotlinx.serialization.json.put
 import org.json.JSONObject
 import java.io.File
 import java.io.IOException
+import java.time.Instant
 import java.time.OffsetDateTime
 
 data class SyncStatus(
@@ -76,7 +79,7 @@ object ServerSync {
     }
 
     /** Saves a progress update for a server title and queues it for its server. */
-    internal suspend fun record(context: Context, progress: ReadingProgressEntity) {
+    internal suspend fun record(context: Context, progress: ReadingProgressEntity, page: Int? = null) {
         val outbox = Outbox(context)
         val payload = JSONObject()
             .put("originId", progress.originId)
@@ -86,8 +89,26 @@ object ServerSync {
             .put("completed", progress.completed)
         progress.positionSeconds?.let { payload.put("position", it) }
         progress.durationSeconds?.let { payload.put("duration", it) }
+        page?.let { payload.put("page", it) }
         outbox.supersede(payload)
         outbox.add(payload)
+        refreshPending(context)
+        requestFlush(context)
+    }
+
+    /** Queues a finished reading session for its server, behind any progress it follows. */
+    internal suspend fun recordSession(context: Context, s: ReadingSession) {
+        // No "unitId" key, so supersede() never mistakes a session for a chapter's progress.
+        val session = JSONObject()
+            .put("id", s.id)
+            .put("startChapter", s.startUnitId)
+            .put("endChapter", s.endUnitId)
+            .put("startPage", s.startPage)
+            .put("endPage", s.endPage)
+            .put("startedAt", s.startedAt)
+            .put("endedAt", s.endedAt)
+            .put("chapters", s.units)
+        Outbox(context).add(JSONObject().put("originId", s.originId).put("mediaId", s.mediaId).put("session", session))
         refreshPending(context)
         requestFlush(context)
     }
@@ -267,7 +288,7 @@ object ServerSync {
     // A run of plain read/unread marks on one title, so "mark all read" is one request instead of hundreds.
     private fun readMarks(entries: List<OutboxEntry>, start: Int): List<OutboxEntry> {
         fun mark(e: OutboxEntry): Pair<String, Boolean>? {
-            if (e.payload.has("position")) return null
+            if (e.payload.has("position") || e.payload.has("session")) return null
             val p = e.payload.getDouble("progress")
             val done = e.payload.getBoolean("completed")
             if (!((done && p >= 1.0) || (!done && p <= 0.0))) return null
@@ -282,6 +303,7 @@ object ServerSync {
     private suspend fun send(context: Context, batch: List<OutboxEntry>) {
         val p = batch.first().payload
         val id = serverMediaId(context, p.getString("originId"), p.getString("mediaId"))
+        p.optJSONObject("session")?.let { return sendSession(id, it) }
         if (batch.size > 1) {
             ServerSession.client.query(
                 "mutation Marks(\$id: ID!, \$chapters: [ID!]!, \$read: Boolean!) { markChaptersRead(mediaId: \$id, chapterIds: \$chapters, read: \$read) { id } }",
@@ -293,17 +315,50 @@ object ServerSync {
             )
             return
         }
+        val vars = buildJsonObject {
+            put("m", id)
+            put("c", p.getString("unitId"))
+            put("p", p.getDouble("progress"))
+            put("done", p.getBoolean("completed"))
+            if (p.has("position")) put("pos", p.getDouble("position"))
+            if (p.has("duration")) put("dur", p.getDouble("duration"))
+            if (p.has("page")) put("page", p.getInt("page"))
+        }
+        try {
+            ServerSession.client.query(progressMutation(withPage = p.has("page")), vars)
+        } catch (e: GraphQLException) {
+            // Servers from before resume pages reject the argument; the progress still matters more than the page.
+            if (e.code != "GRAPHQL_VALIDATION_FAILED" || !p.has("page")) throw e
+            ServerSession.client.query(progressMutation(withPage = false), JsonObject(vars - "page"))
+        }
+    }
+
+    private fun progressMutation(withPage: Boolean): String {
+        val pageVar = if (withPage) ", \$page: Int" else ""
+        val pageArg = if (withPage) ", page: \$page" else ""
+        return "mutation Progress(\$m: ID!, \$c: ID!, \$p: Float!, \$done: Boolean, \$pos: Float, \$dur: Float$pageVar) { " +
+            "updateReadingProgress(mediaId: \$m, chapterId: \$c, progress: \$p, completed: \$done, positionSeconds: \$pos, durationSeconds: \$dur$pageArg) { id } }"
+    }
+
+    // A server's chapter IDs are the phone's unit IDs for its titles, so they go across as they are.
+    private suspend fun sendSession(mediaId: String, s: JSONObject) {
+        val startedAt = s.getLong("startedAt")
+        val endedAt = s.getLong("endedAt")
         ServerSession.client.query(
-            """mutation Progress(${'$'}m: ID!, ${'$'}c: ID!, ${'$'}p: Float!, ${'$'}done: Boolean, ${'$'}pos: Float, ${'$'}dur: Float) {
-                updateReadingProgress(mediaId: ${'$'}m, chapterId: ${'$'}c, progress: ${'$'}p, completed: ${'$'}done, positionSeconds: ${'$'}pos, durationSeconds: ${'$'}dur) { id }
-            }""",
+            "mutation Session(\$in: ReadingSessionInput!) { recordReadingSession(input: \$in) { id } }",
             buildJsonObject {
-                put("m", id)
-                put("c", p.getString("unitId"))
-                put("p", p.getDouble("progress"))
-                put("done", p.getBoolean("completed"))
-                if (p.has("position")) put("pos", p.getDouble("position"))
-                if (p.has("duration")) put("dur", p.getDouble("duration"))
+                put("in", buildJsonObject {
+                    put("id", s.getString("id"))
+                    put("mediaId", mediaId)
+                    put("startChapterId", s.getString("startChapter"))
+                    put("endChapterId", s.getString("endChapter"))
+                    put("startPage", s.getInt("startPage"))
+                    put("endPage", s.getInt("endPage"))
+                    put("startedAt", Instant.ofEpochMilli(startedAt).toString())
+                    put("endedAt", Instant.ofEpochMilli(endedAt).toString())
+                    put("durationMs", (endedAt - startedAt).coerceAtMost(ReadingSessions.GAP_MS).toInt())
+                    put("chapters", s.getInt("chapters").coerceAtLeast(1))
+                })
             },
         )
     }
@@ -424,8 +479,8 @@ internal class Outbox(context: Context) {
     }
 
     suspend fun pendingUnits(originId: String, mediaId: String): Set<String> = pending()
-        .filter { it.payload.optString("originId") == originId && it.payload.optString("mediaId") == mediaId }
-        .map { it.payload.optString("unitId") }
+        .filter { it.payload.optString("originId") == originId && it.payload.optString("mediaId") == mediaId && it.payload.has("unitId") }
+        .map { it.payload.getString("unitId") }
         .toSet()
 
     suspend fun delete(ids: List<Long>) = withContext(Dispatchers.IO) {

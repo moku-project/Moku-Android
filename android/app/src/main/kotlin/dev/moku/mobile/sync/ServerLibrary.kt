@@ -152,7 +152,7 @@ class ServerLibrary(context: Context) : LibraryStore {
     ) {
         val entry = ReadingProgressEntity(originId, mediaId, unitId, progress, completed, positionSeconds, durationSeconds, System.currentTimeMillis())
         progressDao.upsert(entry)
-        ServerSync.record(app, entry)
+        ServerSync.record(app, entry, page)
     }
 
     override suspend fun getProgress(originId: String, mediaId: String, unitId: String): ReadingProgressEntity? =

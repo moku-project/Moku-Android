@@ -1,6 +1,8 @@
 package dev.moku.mobile.library
 
 import android.content.Context
+import dev.moku.mobile.sync.ServerOrigin
+import dev.moku.mobile.sync.ServerSync
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
@@ -21,8 +23,9 @@ data class ReadingSession(
 )
 
 // Like desktop, a session ends after an hour without reading or when another title is opened.
+// Phone titles go to the phone's Tsunagu, server titles to that server.
 object ReadingSessions {
-    private const val GAP_MS = 3_600_000L
+    const val GAP_MS = 3_600_000L
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
     private var active: Active? = null
 
@@ -42,7 +45,7 @@ object ReadingSessions {
 
     @Synchronized
     fun progress(context: Context, originId: String, mediaId: String, unitId: String, page: Int) {
-        if (!originId.startsWith("local:")) return
+        if (!originId.startsWith("local:") && !ServerOrigin.isServer(originId)) return
         val now = System.currentTimeMillis()
         active?.let { a ->
             if (a.originId != originId || a.mediaId != mediaId || now - a.last > GAP_MS) {
@@ -68,6 +71,8 @@ object ReadingSessions {
         if (endedAt - a.startedAt < 1_000) return
         val session = ReadingSession(a.id, a.originId, a.mediaId, a.startUnitId, a.endUnitId, a.startPage, a.endPage, a.startedAt, endedAt, a.units.size)
         val app = context.applicationContext
-        scope.launch { CoreLibrary(app).recordSession(session) }
+        scope.launch {
+            if (ServerOrigin.isServer(session.originId)) ServerSync.recordSession(app, session) else CoreLibrary(app).recordSession(session)
+        }
     }
 }
