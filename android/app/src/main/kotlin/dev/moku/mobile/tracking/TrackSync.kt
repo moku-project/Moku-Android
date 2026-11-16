@@ -3,7 +3,7 @@ package dev.moku.mobile.tracking
 import android.content.Context
 import android.util.Log
 import dev.moku.mobile.backend.BackendUnit
-import dev.moku.mobile.library.LocalLibraryRepository
+import dev.moku.mobile.library.CoreLibrary
 import dev.moku.mobile.library.MediaCache
 import dev.moku.mobile.ui.reader.num
 import kotlin.math.floor
@@ -11,7 +11,7 @@ import kotlin.math.floor
 /** Syncs progress both ways between the library and its trackers; whichever side is further ahead wins. */
 class TrackSync(context: Context) {
     private val tracking = LocalTrackingRepository(context)
-    private val library = LocalLibraryRepository(context)
+    private val library = CoreLibrary(context)
     private val cache = MediaCache(context)
 
     /** Pulls each tracker, marks local units up to its progress as read, then pushes if local is ahead. */

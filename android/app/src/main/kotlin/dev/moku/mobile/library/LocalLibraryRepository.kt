@@ -80,6 +80,7 @@ class LocalLibraryRepository(context: Context) : LibraryStore {
         completed: Boolean,
         positionSeconds: Double?,
         durationSeconds: Double?,
+        page: Int?,
     ) = progressDao.upsert(
         ReadingProgressEntity(
             originId = originId,

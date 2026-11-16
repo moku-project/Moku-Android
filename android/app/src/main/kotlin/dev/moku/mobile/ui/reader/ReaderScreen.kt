@@ -15,6 +15,7 @@ import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.key
@@ -44,6 +45,7 @@ import dev.moku.mobile.library.LocalLibraryRepository
 import dev.moku.mobile.library.Libraries
 import dev.moku.mobile.library.MediaCache
 import dev.moku.mobile.library.ReadingProgressEntity
+import dev.moku.mobile.library.ReadingSessions
 import dev.moku.mobile.playback.SubtitleLoader
 import dev.moku.mobile.tracking.TrackSync
 import dev.moku.mobile.ui.settings.ActionChip
@@ -67,6 +69,7 @@ fun ReaderScreen(originId: String, mediaId: String, unitId: String, onBack: () -
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
     val repo = remember(originId) { Libraries.forOrigin(context, originId) }
+    DisposableEffect(originId, mediaId) { onDispose { ReadingSessions.close(context) } }
     val device = remember { LocalLibraryRepository(context) }
     val trackSync = remember { TrackSync(context) }
     remember { ReaderPrefs.init(context) }
@@ -166,9 +169,10 @@ fun ReaderScreen(originId: String, mediaId: String, unitId: String, onBack: () -
         onBack = onBack,
     )
 
-    fun save(id: String, fraction: Float, completed: Boolean, position: Double? = null, duration: Double? = null) {
+    fun save(id: String, fraction: Float, completed: Boolean, position: Double? = null, duration: Double? = null, page: Int? = null) {
+        ReadingSessions.progress(context, originId, mediaId, id, page ?: 0)
         scope.launch {
-            repo.updateProgress(originId, mediaId, id, fraction, completed, position, duration)
+            repo.updateProgress(originId, mediaId, id, fraction, completed, position, duration, page)
             if (completed) trackSync.push(originId, mediaId, units)
         }
     }
@@ -202,7 +206,7 @@ fun ReaderScreen(originId: String, mediaId: String, unitId: String, onBack: () -
                         load = loadQuietly,
                     ) { id, index, total ->
                         visibleId = id
-                        save(id, (index + 1f) / total, index >= total - 1)
+                        save(id, (index + 1f) / total, index >= total - 1, page = index + 1)
                     }
                 }
                 is BackendUnitContent.Text -> NovelReaderScreen(

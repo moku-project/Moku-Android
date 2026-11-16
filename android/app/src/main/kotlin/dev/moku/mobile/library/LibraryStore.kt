@@ -40,6 +40,8 @@ interface LibraryStore {
         completed: Boolean,
         positionSeconds: Double? = null,
         durationSeconds: Double? = null,
+        /** The page reached, for stores that let other devices resume on it. */
+        page: Int? = null,
     )
     suspend fun getProgress(originId: String, mediaId: String, unitId: String): ReadingProgressEntity?
     suspend fun getProgressForMedia(originId: String, mediaId: String): List<ReadingProgressEntity>
@@ -50,11 +52,11 @@ interface LibraryStore {
 }
 
 object Libraries {
-    /** The library the app is showing: the server's in server mode, otherwise the phone's. */
+    /** The library the app is showing: the server's in server mode, otherwise the phone's, kept in its own Tsunagu. */
     fun active(context: Context): LibraryStore =
-        if (ServerSession.active) ServerLibrary(context) else LocalLibraryRepository(context)
+        if (ServerSession.active) ServerLibrary(context) else CoreLibrary(context)
 
     /** A server title's downloads and progress outlive server mode, so per-title work goes by origin, not [active]. */
     fun forOrigin(context: Context, originId: String): LibraryStore =
-        if (ServerOrigin.isServer(originId)) ServerLibrary(context) else LocalLibraryRepository(context)
+        if (ServerOrigin.isServer(originId)) ServerLibrary(context) else CoreLibrary(context)
 }

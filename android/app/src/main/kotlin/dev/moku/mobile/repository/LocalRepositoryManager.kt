@@ -5,7 +5,10 @@ import android.content.Context
 import android.content.pm.PackageManager
 import android.database.sqlite.SQLiteDatabase
 import android.net.Uri
+import android.util.Log
 import dev.moku.mobile.backend.MediaContentType
+import dev.moku.mobile.core.Core
+import dev.moku.mobile.core.CoreExtensions
 import dev.moku.mobile.extension.ExtensionInstaller
 import dev.moku.mobile.extension.ExtensionLoader
 import dev.moku.mobile.library.LocalLibraryDatabase
@@ -15,6 +18,8 @@ import kotlinx.coroutines.Dispatchers
 import dev.moku.mobile.novel.NovelPluginCache
 import eu.kanade.tachiyomi.network.NetworkHelper
 import kotlinx.coroutines.withContext
+import kotlinx.serialization.json.buildJsonObject
+import kotlinx.serialization.json.put
 import okhttp3.Request
 import uy.kohesive.injekt.injectLazy
 import java.io.File
@@ -177,7 +182,7 @@ class LocalRepositoryManager(private val context: Context) {
         }
     }
 
-    private fun record(installed: InstalledExtensionEntity): InstalledExtensionEntity {
+    private suspend fun record(installed: InstalledExtensionEntity): InstalledExtensionEntity {
         db.writableDatabase.insertWithOnConflict(
             "installed_extensions", null,
             ContentValues().apply {
@@ -192,6 +197,9 @@ class LocalRepositoryManager(private val context: Context) {
             },
             SQLiteDatabase.CONFLICT_REPLACE,
         )
+        // The phone's Tsunagu needs its own copy to sync titles from this extension; synced titles waiting on it then arrive.
+        runCatching { CoreExtensions.id(context, installed.packageName, installed.contentType) }
+            .onFailure { Log.w("LocalRepositoryManager", "couldn't hand ${installed.packageName} to the core", it) }
         return installed
     }
 
@@ -199,6 +207,10 @@ class LocalRepositoryManager(private val context: Context) {
         installer.uninstall(packageName)
         NovelPluginCache.delete(context, packageName)
         db.writableDatabase.delete("installed_extensions", "packageName = ?", arrayOf(packageName))
+        runCatching {
+            Core.query(context, "mutation Drop(\$p: String!) { uninstallExtension(packageName: \$p) { id } }", buildJsonObject { put("p", packageName) })
+        }
+        CoreExtensions.invalidate()
         Unit
     }
 

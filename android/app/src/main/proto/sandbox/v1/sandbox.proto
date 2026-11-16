@@ -22,6 +22,9 @@ service ExtensionService {
   rpc GetLatestUpdates(BrowseRequest) returns (SearchResponse);
   rpc GetSourcePreferences(GetSourcePreferencesRequest) returns (GetSourcePreferencesResponse);
   rpc SetSourcePreference(SetSourcePreferenceRequest) returns (Empty);
+  // Reads, or with apply=true stores, the cookies and User-Agent sources use for url's host,
+  // after the user passes a challenge in a real browser.
+  rpc BrowserCookies(BrowserCookiesRequest) returns (BrowserCookiesResponse);
 }
 
 enum ContentType {
@@ -56,6 +59,8 @@ message Extension {
   string lang = 5;
   bool supports_latest = 6;
   int64 source_id = 7;
+  // The site the source reads from, for browser verification. Empty if unknown.
+  string base_url = 8;
 }
 
 message ExtensionList {
@@ -283,3 +288,12 @@ message SortFilter {
   int32 index = 3;
   bool ascending = 4;
 }
+
+// state_json: {"userAgent", "cookies": [{name, value, domain, path, expiresAt (epoch ms), secure, httpOnly,
+// hostOnly, persistent}]}. Only cookies for url's host are accepted or returned.
+message BrowserCookiesRequest {
+  string url = 1;
+  string state_json = 2;
+  bool apply = 3;
+}
+message BrowserCookiesResponse { string state_json = 1; }

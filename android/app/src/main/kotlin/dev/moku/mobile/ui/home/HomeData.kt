@@ -2,7 +2,14 @@ package dev.moku.mobile.ui.home
 
 import android.content.Context
 import android.util.Log
+import dev.moku.mobile.core.Core
 import dev.moku.mobile.library.LibraryMediaEntity
+import dev.moku.mobile.remote.ServerSession
+import dev.moku.mobile.remote.str
+import kotlinx.serialization.json.buildJsonObject
+import kotlinx.serialization.json.jsonArray
+import kotlinx.serialization.json.jsonObject
+import kotlinx.serialization.json.put
 import dev.moku.mobile.library.Libraries
 import dev.moku.mobile.library.ReadingProgressEntity
 import kotlinx.coroutines.Dispatchers
@@ -60,7 +67,7 @@ object HomeDataLoader {
                 .firstOrNull { media -> repo.nextUnread(media.originId, media.mediaId) != null }
             val upNext = upNextMedia?.let { toContinueReadingItem(it, allProgress) }
 
-            HomeState(
+            val local = HomeState(
                 loading = false,
                 continueReading = continueReading,
                 streakDays = currentStreak(distinctDays),
@@ -71,10 +78,30 @@ object HomeDataLoader {
                 heatmap = heatmap(allProgress.groupingBy { DAY_FORMAT.format(it.updatedAt) }.eachCount()),
                 upNext = upNext,
             )
+            // The phone's Tsunagu tracks real reading time and syncs it; progress records alone can't.
+            if (ServerSession.active) local else runCatching { withCoreStats(context, local) }.getOrDefault(local)
         } catch (t: Throwable) {
             Log.d("HomeDataLoader", "load failed: ${t.javaClass.simpleName}: ${t.message}", t)
             HomeState(loading = false, error = "Check your connection and try again.")
         }
+    }
+
+    private suspend fun withCoreStats(context: Context, base: HomeState): HomeState {
+        val zone = TimeZone.getDefault().id
+        val stats = Core.query(
+            context,
+            "query Stats(\$tz: String) { readingStats(timeZone: \$tz) { totalChaptersRead totalTitlesRead totalMinutesRead chaptersThisWeek currentStreakDays days { date chapters } } }",
+            buildJsonObject { put("tz", zone) },
+        )["readingStats"]!!.jsonObject
+        val days = stats["days"]!!.jsonArray.map { it.jsonObject }.associate { it.str("date") to it.str("chapters").toInt() }
+        return base.copy(
+            streakDays = stats.str("currentStreakDays").toInt(),
+            totalChapters = stats.str("totalChaptersRead").toInt(),
+            readTimeSeconds = stats.str("totalMinutesRead").toLong() * 60,
+            chaptersThisWeek = stats.str("chaptersThisWeek").toInt(),
+            seriesStarted = stats.str("totalTitlesRead").toInt(),
+            heatmap = heatmap(days),
+        )
     }
 
     private fun toContinueReadingItem(media: LibraryMediaEntity, allProgress: List<ReadingProgressEntity>): ContinueReadingItem {

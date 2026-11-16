@@ -108,7 +108,7 @@ class MediaCache(private val context: Context) {
 
     /** Refreshes library titles' cached details, skipping any refreshed within [freshFor], so it's cheap per launch. */
     suspend fun syncLibrary(freshFor: Long = 6L * 3600 * 1000): Int = coroutineScope {
-        val library = LibraryMediaDao(db).getAll()
+        val library = CoreLibrary(context).getLibrary()
         val now = System.currentTimeMillis()
         val gate = Semaphore(3)
         prune()

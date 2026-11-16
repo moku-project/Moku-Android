@@ -11,6 +11,8 @@ object NovelPluginCache {
         File(dir(context), "$packageName.js").writeText(jsCode)
     }
 
+    fun file(context: Context, packageName: String): File = File(dir(context), "$packageName.js")
+
     fun load(context: Context, packageName: String): String? {
         val file = File(dir(context), "$packageName.js")
         return if (file.exists()) file.readText() else null

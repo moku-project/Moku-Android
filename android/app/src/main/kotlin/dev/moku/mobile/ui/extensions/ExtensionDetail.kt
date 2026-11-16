@@ -40,6 +40,7 @@ import dev.moku.mobile.backend.MediaContentType
 import dev.moku.mobile.extension.ExtensionInstaller
 import dev.moku.mobile.extension.ExtensionLoader
 import dev.moku.mobile.extension.RuntimeBootstrap
+import dev.moku.mobile.library.CoreLibrary
 import dev.moku.mobile.library.DownloadStatus
 import dev.moku.mobile.library.LocalLibraryRepository
 import dev.moku.mobile.novel.NovelPluginCache
@@ -95,7 +96,7 @@ private suspend fun loadFacts(context: Context, ref: ExtensionRef): ExtensionFac
     val kind = ref.contentType.name.lowercase()
     val origin = "local:$kind:${ref.packageName}"
     val repo = LocalLibraryRepository(context)
-    val libraryTitles = repo.getLibrary().count { it.originId == origin }
+    val libraryTitles = CoreLibrary(context).getLibrary().count { it.originId == origin }
     val downloaded = repo.getDownloads().count { it.originId == origin && it.status == DownloadStatus.DONE }
     val loaded = runCatching {
         RuntimeBootstrap.ensure(context)

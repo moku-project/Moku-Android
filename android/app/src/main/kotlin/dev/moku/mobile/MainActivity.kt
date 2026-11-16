@@ -39,7 +39,12 @@ import dev.moku.mobile.backend.CoverHeaders
 import dev.moku.mobile.core.CrashReports
 import dev.moku.mobile.core.NotificationPermission
 import dev.moku.mobile.ui.components.MokuToast
+import dev.moku.mobile.core.Core
 import dev.moku.mobile.core.TsunaguCore
+import dev.moku.mobile.library.CoreMigration
+import dev.moku.mobile.library.ReadingSessions
+import dev.moku.tsunagu.embedded.Embedded
+import android.net.wifi.WifiManager
 import dev.moku.mobile.library.LocalLibraryRepository
 import dev.moku.mobile.library.MediaCache
 import dev.moku.mobile.tracking.TrackSync
@@ -93,6 +98,23 @@ class MainActivity : ComponentActivity() {
         super.onDestroy()
     }
 
+    // Many phones drop multicast unless an app holds this, and Moku Sync finds other devices with it.
+    private var multicast: WifiManager.MulticastLock? = null
+
+    override fun onResume() {
+        super.onResume()
+        multicast = (applicationContext.getSystemService(WIFI_SERVICE) as? WifiManager)
+            ?.createMulticastLock("moku-sync")?.apply { setReferenceCounted(false); acquire() }
+        Embedded.syncWake()
+    }
+
+    override fun onPause() {
+        ReadingSessions.close(this)
+        multicast?.release()
+        multicast = null
+        super.onPause()
+    }
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         enableEdgeToEdge()
@@ -108,7 +130,7 @@ class MainActivity : ComponentActivity() {
             ImageLoader.Builder(this)
                 .respectCacheHeaders(false)
                 .crossfade(180)
-                .okHttpClient { OkHttpClient.Builder().addInterceptor(ServerAuthInterceptor).addInterceptor(CoverHeaders).build() }
+                .okHttpClient { OkHttpClient.Builder().addInterceptor(ServerAuthInterceptor).addInterceptor(Core.AuthInterceptor).addInterceptor(CoverHeaders).build() }
                 .diskCache { DiskCache.Builder().directory(cacheDir.resolve("image_cache")).maxSizeBytes(512L * 1024 * 1024).build() }
                 .build(),
         )
@@ -123,6 +145,7 @@ class MainActivity : ComponentActivity() {
             // Runs even offline: a server that can't be reached has to say so, not quietly show stale titles.
             ServerSync.check(this@MainActivity)
             if (!isOnline()) return@launch
+            runCatching { CoreMigration.run(this@MainActivity) }.onFailure { Log.w("MainActivity", "moving the library into the core failed", it) }
             runCatching { MediaCache(this@MainActivity).syncLibrary() }.onFailure { Log.w("MainActivity", "library metadata sync failed", it) }
             runCatching { TrackSync(this@MainActivity).syncLibrary() }.onFailure { Log.w("MainActivity", "tracker sync failed", it) }
             AppUpdater.checkQuietly(this@MainActivity)

@@ -148,6 +148,7 @@ class ServerLibrary(context: Context) : LibraryStore {
         completed: Boolean,
         positionSeconds: Double?,
         durationSeconds: Double?,
+        page: Int?,
     ) {
         val entry = ReadingProgressEntity(originId, mediaId, unitId, progress, completed, positionSeconds, durationSeconds, System.currentTimeMillis())
         progressDao.upsert(entry)

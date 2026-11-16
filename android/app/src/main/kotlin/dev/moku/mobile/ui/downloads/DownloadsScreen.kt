@@ -36,6 +36,7 @@ import dev.moku.mobile.backend.BackendUnit
 import dev.moku.mobile.backend.MediaContentType
 import dev.moku.mobile.library.DownloadEntity
 import dev.moku.mobile.library.DownloadQueueManager
+import dev.moku.mobile.library.CoreLibrary
 import dev.moku.mobile.library.DownloadStatus
 import dev.moku.mobile.library.LocalLibraryRepository
 import dev.moku.mobile.library.MediaCache
@@ -104,7 +105,7 @@ fun DownloadsScreen(onOpenMedia: (String, String) -> Unit = { _, _ -> }) {
         downloads = repo.getDownloads()
             .filter { ServerOrigin.parse(it.originId)?.instanceId == showing }
             .sortedByDescending { it.createdAt }
-        val library = repo.getLibrary().associateBy { it.originId to it.mediaId }
+        val library = CoreLibrary(context).getLibrary().associateBy { it.originId to it.mediaId }
         titles = downloads.map { it.originId to it.mediaId }.distinct().associateWith { key ->
             val cached = cache.get(key.first, key.second)
             val local = library[key]
