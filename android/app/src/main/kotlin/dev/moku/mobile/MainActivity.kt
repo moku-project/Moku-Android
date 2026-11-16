@@ -38,6 +38,7 @@ import coil.disk.DiskCache
 import dev.moku.mobile.backend.CoverHeaders
 import dev.moku.mobile.core.CrashReports
 import dev.moku.mobile.core.NotificationPermission
+import dev.moku.mobile.core.SyncNsd
 import dev.moku.mobile.ui.components.MokuToast
 import dev.moku.mobile.core.Core
 import dev.moku.mobile.core.TsunaguCore
@@ -105,17 +106,20 @@ class MainActivity : ComponentActivity() {
         super.onResume()
         multicast = (applicationContext.getSystemService(WIFI_SERVICE) as? WifiManager)
             ?.createMulticastLock("moku-sync")?.apply { setReferenceCounted(false); acquire() }
+        SyncNsd.resume()
         Embedded.syncWake()
     }
 
     override fun onPause() {
         ReadingSessions.close(this)
+        SyncNsd.pause()
         multicast?.release()
         multicast = null
         super.onPause()
     }
 
     override fun onCreate(savedInstanceState: Bundle?) {
+        SyncNsd.install(this)
         super.onCreate(savedInstanceState)
         enableEdgeToEdge()
         NotificationPermission.register(this)

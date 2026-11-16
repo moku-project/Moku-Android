@@ -53,6 +53,7 @@ object TsunaguCore {
 
         val dataDir = File(app.filesDir, "tsunagu").apply { mkdirs() }
         try {
+            SyncNsd.install(app)
             Embedded.start(dataDir.absolutePath, "${LOOPBACK.hostAddress}:${server.port}", hostToken)
         } catch (e: Exception) {
             server.shutdownNow()
@@ -65,6 +66,7 @@ object TsunaguCore {
             Log.i(TAG, "core at ${started.baseUrl} token=${started.token}")
         }
         endpoint = started
+        SyncNsd.advertise()
         return started
     }
 

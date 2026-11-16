@@ -282,6 +282,7 @@ fun TextInput(
     mono: Boolean = false,
     password: Boolean = false,
     keyboard: KeyboardType = KeyboardType.Text,
+    format: VisualTransformation = VisualTransformation.None,
 ) {
     val colors = MokuTheme.colors
     val shape = RoundedCornerShape(MokuRadius.Lg)
@@ -302,7 +303,7 @@ fun TextInput(
             singleLine = true,
             textStyle = style.copy(color = colors.textPrimary),
             cursorBrush = SolidColor(colors.accent),
-            visualTransformation = if (password) PasswordVisualTransformation() else VisualTransformation.None,
+            visualTransformation = if (password) PasswordVisualTransformation() else format,
             keyboardOptions = KeyboardOptions(keyboardType = if (password) KeyboardType.Password else keyboard, autoCorrectEnabled = false),
             modifier = Modifier.fillMaxWidth(),
         )

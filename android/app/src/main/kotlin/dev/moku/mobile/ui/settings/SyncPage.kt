@@ -20,12 +20,17 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.input.KeyboardType
+import androidx.compose.ui.text.input.OffsetMapping
+import androidx.compose.ui.text.input.TransformedText
+import androidx.compose.ui.text.input.VisualTransformation
 import com.journeyapps.barcodescanner.ScanContract
 import com.journeyapps.barcodescanner.ScanOptions
 import dev.moku.mobile.R
 import dev.moku.mobile.backend.MediaContentType
 import dev.moku.mobile.core.Core
+import dev.moku.mobile.core.SyncNsd
 import dev.moku.mobile.remote.str
 import dev.moku.mobile.remote.strOrNull
 import dev.moku.mobile.repository.LocalRepositoryManager
@@ -68,6 +73,20 @@ private fun JsonObject.toStatus() = Status(
 )
 
 private fun plural(n: Int, one: String, many: String) = if (n == 1) "1 $one" else "$n $many"
+
+// Changing text mid-typing makes the keyboard drop characters, so what's typed is kept as is and only drawn
+// like the other device shows it: capitals, with a space after the first four.
+private object CodeFormat : VisualTransformation {
+    override fun filter(text: AnnotatedString): TransformedText {
+        val s = text.text.uppercase()
+        if (s.length <= 4 || !s.all { it.isLetterOrDigit() }) return TransformedText(AnnotatedString(s), OffsetMapping.Identity)
+        val offsets = object : OffsetMapping {
+            override fun originalToTransformed(offset: Int) = if (offset > 4) offset + 1 else offset
+            override fun transformedToOriginal(offset: Int) = (if (offset > 4) offset - 1 else offset).coerceAtMost(s.length)
+        }
+        return TransformedText(AnnotatedString(s.take(4) + " " + s.drop(4)), offsets)
+    }
+}
 
 /** Moku desktop's QR code: `moku://pair?node=…&name=…&code=…&addr=…` with one `addr` per network address. */
 private fun parsePairLink(text: String): Pair<Target, String>? {
@@ -131,7 +150,7 @@ internal fun SyncPage(onBack: () -> Unit) {
         busy = true
         runCatching {
             Core.query(context, "mutation Name(\$n: String!) { setSyncDeviceName(name: \$n) { $STATUS } }", buildJsonObject { put("n", name) })
-        }.onSuccess { status = it["setSyncDeviceName"]!!.jsonObject.toStatus(); renaming = false }
+        }.onSuccess { status = it["setSyncDeviceName"]!!.jsonObject.toStatus(); renaming = false; SyncNsd.advertise() }
             .onFailure { MokuToast.show(it.message ?: "Couldn't save the name") }
         busy = false
     }
@@ -304,7 +323,7 @@ internal fun SyncPage(onBack: () -> Unit) {
                         Text("Pair with ${p?.name ?: t.name ?: t.addresses.first()}", style = MokuText.body, color = colors.textPrimary)
                         if (p == null) {
                             Text("Enter the code shown on ${t.name ?: "that device"} under Settings › Sync.", style = MokuText.meta, color = colors.textMuted)
-                            TextInput(codeInput, { codeInput = it.take(11) }, "XXXX XXXX", Modifier.fillMaxWidth(), mono = true, keyboard = KeyboardType.Ascii)
+                            TextInput(codeInput, { codeInput = it.take(11) }, "XXXX XXXX", Modifier.fillMaxWidth(), mono = true, keyboard = KeyboardType.Ascii, format = CodeFormat)
                         } else {
                             Text("Libraries merge. Nothing is removed.", style = MokuText.meta, color = colors.textMuted)
                             Text(
