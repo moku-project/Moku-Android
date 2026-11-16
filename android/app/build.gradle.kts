@@ -122,7 +122,7 @@ dependencies {
     implementation("org.jetbrains.kotlinx:kotlinx-serialization-json:1.11.0")
     implementation("org.jetbrains.kotlinx:kotlinx-serialization-json-okio:1.11.0")
     implementation("org.jetbrains.kotlinx:kotlinx-serialization-protobuf:1.11.0")
-    implementation("org.jetbrains.kotlinx:kotlinx-coroutines-android:1.9.0")
+    implementation("org.jetbrains.kotlinx:kotlinx-coroutines-android:1.11.0")
     implementation("androidx.preference:preference-ktx:1.2.1")
     implementation("org.jsoup:jsoup:1.23.2")
     implementation("app.cash.quickjs:quickjs-android:0.9.2")
