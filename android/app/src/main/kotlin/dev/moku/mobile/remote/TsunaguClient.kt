@@ -59,8 +59,12 @@ class TsunaguClient(private val server: () -> TsunaguServer?) {
             .build()
         send(request, target.baseUrl).use {
             if (it.code == 401) throw AuthRequiredException()
-            if (!it.isSuccessful) throw IOException("Server returned HTTP ${it.code}")
-            val root = parseObject(it.body.string())
+            // A request the server refuses (422 for a schema it doesn't know) still names why in the body; only a
+            // body without GraphQL errors means the server itself is in trouble.
+            val root = if (it.isSuccessful) parseObject(it.body.string()) else {
+                runCatching { parseObject(it.body.string()) }.getOrNull()?.takeIf { r -> r["errors"] != null }
+                    ?: throw IOException("Server returned HTTP ${it.code}")
+            }
             val errors = root["errors"]?.jsonArray
             if (!errors.isNullOrEmpty()) {
                 val first = errors[0].jsonObject
