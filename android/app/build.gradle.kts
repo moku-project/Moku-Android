@@ -21,7 +21,7 @@ android {
         minSdk = 26
         targetSdk = 36
         // The in-app updater and Android both compare versionCode, so it's derived from the name and only ever grows.
-        versionName = "0.2.0"
+        versionName = "0.2.1"
         versionCode = versionName!!.split(".").map(String::toInt).let { (major, minor, patch) -> major * 10_000 + minor * 100 + patch }
         resValue("string", "app_name", "Moku")
 
