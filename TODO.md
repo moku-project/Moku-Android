@@ -2,8 +2,15 @@
 
 What Moku Mobile still lacks compared to Moku on the desktop, plus known gaps. Grouped by where it shows up in the app.
 
+## Sync
+- [ ] Move to a Tsunagu release with Moku Sync
+- [ ] Sync screen: name the device first, pair from the nearby list or by code, show the merge preview, scan the QR code Moku desktop shows, install missing extensions
+- [ ] Hold a Wi-Fi multicast lock while open (or browse with NSD through `SetSyncDiscovery`) and call `SyncWake` on resume
+- [ ] Record reading sessions with `recordReadingSession`; read Home stats and the activity heatmap from `readingStats` instead of the phone
+- [ ] Send the page with `updateReadingProgress` so other devices resume on the same page
+
 ## Recent
-- [ ] History: recently read and watched, across sources
+- [ ] History: recently read and watched, from `readingSessions`
 - [ ] Updates: check library titles for new chapters/episodes, with notifications
 
 ## Discover
@@ -50,7 +57,7 @@ What Moku Mobile still lacks compared to Moku on the desktop, plus known gaps. G
 - [ ] Show the server's own local files (titles with no extensionId); server mode skips them today
 - [ ] Keep covers with downloads: offline covers of server titles only come from the image cache now
 - [ ] Server downloads: download a range to the phone in one server request instead of one per chapter
-- [ ] Server discovery on the LAN instead of typing the address
+- [ ] Server discovery on the LAN instead of typing the address (the `_moku._tcp` advert points at the sync port, not the API)
 
 ## Releases
 - [ ] GitHub release workflow for Moku-Android: fetch the Tsunagu core, build per-ABI APKs with -PsplitAbi, sign
