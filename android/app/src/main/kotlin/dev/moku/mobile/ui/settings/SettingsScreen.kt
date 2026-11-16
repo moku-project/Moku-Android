@@ -87,6 +87,7 @@ private sealed interface Page {
     data object Content : Page
     data object Trackers : Page
     data object Server : Page
+    data object Sync : Page
     data object Storage : Page
     data object Backup : Page
     data object About : Page
@@ -107,6 +108,7 @@ fun SettingsScreen(onOpenExtensions: () -> Unit = {}) {
             Page.Content -> ContentFilterPage(onBack = toRoot)
             Page.Trackers -> TrackersPage(onBack = toRoot)
             Page.Server -> ServerPage(onBack = toRoot)
+            Page.Sync -> SyncPage(onBack = toRoot)
             Page.Storage -> StoragePage(onBack = toRoot)
             Page.Backup -> BackupPage(onBack = toRoot)
             Page.About -> AboutPage(onBack = toRoot)
@@ -162,6 +164,8 @@ private fun SettingsRoot(onOpen: (Page) -> Unit, onOpenExtensions: () -> Unit) {
                         value = if (server != null) (if (ServerSession.active) "On" else "Off") else null,
                         chevron = true,
                     ) { onOpen(Page.Server) }
+                    GroupDivider()
+                    SettingsRow("Sync", icon = R.drawable.ph_arrows_clockwise_light, subtitle = "Keep your other Moku devices in step", chevron = true) { onOpen(Page.Sync) }
                     GroupDivider()
                     SettingsRow("Extensions", icon = R.drawable.ph_puzzle_piece_light, subtitle = "Repositories and installed sources", chevron = true, onClick = onOpenExtensions)
                     GroupDivider()
